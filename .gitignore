@@ -1,0 +1,17 @@
+soundcloud_keys.pri
+*.user
+*.pro.user
+build-*/
+RPMS/
+BUILD/
+BUILDROOT/
+SRPMS/
+*.o
+*.a
+moc_*
+qrc_*
+ui_*
+*.qm
+.qmake.stash
+Makefile
+.sfdk/

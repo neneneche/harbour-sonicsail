@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+X-Nemo-Application-Type=silica-qt5
+Name=Soundsail
+Icon=harbour-soundsail
+Exec=harbour-soundsail
+Categories=AudioVideo;Audio;Network;
+
+[X-Sailjail]
+OrganizationName=harbour-soundsail
+ApplicationName=harbour-soundsail
+Permissions=Internet;Audio;Music;

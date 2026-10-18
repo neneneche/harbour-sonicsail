@@ -1,0 +1,37 @@
+Name: harbour-soundsail
+Summary: SoundCloud client for Sailfish OS
+Version: 0.1.0
+Release: 1
+Group: Applications/Multimedia
+URL: https://github.com/harbour-soundsail/harbour-soundsail
+License: BSD-3-Clause
+Sources:
+- '%{name}-%{version}.tar.bz2'
+Description: |
+  Native Sailfish SoundCloud client. Browse charts, search tracks,
+  play with queue and cover actions, manage likes and playlists.
+Builder: qmake5
+Config:
+  qmake5: [CONFIG+=sailfishapp]
+PkgConfigBR:
+  - sailfishapp
+  - Qt5Core
+  - Qt5Quick
+  - Qt5Qml
+  - Qt5Network
+  - Qt5Multimedia
+  - Qt5Sql
+  - Qt5DBus
+Requires:
+  - sailfishsilica-qt5
+  - qt5-qtmultimedia
+  - qt5-qtmultimedia-plugin-audio-pulseaudio
+  - mapplauncherd-booster-silica-qt5
+Files:
+  - '%{_bindir}/%{name}'
+  - '%{_datadir}/%{name}'
+  - '%{_datadir}/applications/%{name}.desktop'
+  - '%{_datadir}/icons/hicolor/86x86/apps/%{name}.png'
+  - '%{_datadir}/icons/hicolor/108x108/apps/%{name}.png'
+  - '%{_datadir}/icons/hicolor/128x128/apps/%{name}.png'
+  - '%{_datadir}/icons/hicolor/172x172/apps/%{name}.png'
