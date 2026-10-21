@@ -34,6 +34,13 @@ public:
     Q_INVOKABLE void loginWithPassword(const QString &email, const QString &password);
     Q_INVOKABLE void loginWithToken(const QString &token);
     Q_INVOKABLE void importBrowserCookies();
+    // Harvests oauth_token from this app's own Sailfish WebView profile
+    // (CacheLocation, written by Sailfish.WebView). Silent when not found —
+    // intended to be polled while the in-app sign-in page is open.
+    Q_INVOKABLE void importOwnWebProfileCookies();
+    // Deletes the embedded browser's cookie/session files on disk.
+    // Returns how many files/dirs were removed.
+    Q_INVOKABLE int clearWebProfileSession();
     Q_INVOKABLE void logout();
     Q_INVOKABLE void cancelLogin();
 
@@ -86,4 +93,5 @@ private:
     QString m_pkceState;
     QString m_redirectUri;
     QString m_pendingToken;
+    QString m_lastRejectedHarvest;
 };

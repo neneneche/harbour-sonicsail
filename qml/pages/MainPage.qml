@@ -6,7 +6,7 @@ Page {
     id: page
 
     property var tracksModel: null
-    property int tab: 0 // 0 playlists, 1 search, 2 likes
+    property int tab: 0 // 0 home, 1 search, 2 likes, 3 playlists
 
     Component.onCompleted: {
         tracksModel = api.createTrackModel()
@@ -23,9 +23,11 @@ Page {
         if (!tracksModel)
             return
         if (tab === 0)
-            tracksModel.loadUserPlaylists()
+            tracksModel.loadHome()
         else if (tab === 2)
             tracksModel.loadLikes()
+        else if (tab === 3)
+            tracksModel.loadUserPlaylists()
         else if (tab === 1 && searchField.text.length > 2)
             tracksModel.search(searchField.text)
     }
@@ -55,17 +57,20 @@ Page {
         }
     }
 
+    // Home + Playlists: 2-column square artwork grid
     SilicaGridView {
         id: grid
         anchors.fill: parent
-        visible: tab === 0
-        model: tab === 0 ? tracksModel : null
+        visible: tab === 0 || tab === 3
+        model: (tab === 0 || tab === 3) ? tracksModel : null
         bottomMargin: playerBar.height
         clip: true
 
         header: Column {
             width: grid.width
-            PageHeader { title: qsTr("Playlists") }
+            PageHeader {
+                title: tab === 0 ? qsTr("Home") : qsTr("Playlists")
+            }
             TabRow {
                 currentTab: tab
                 onTabSelected: showTab(index)
@@ -79,6 +84,7 @@ Page {
             title: model.title || ""
             artworkUrl: model.artworkUrl || ""
             username: model.username || ""
+            kind: model.kind || ""
             payload: {
                 if (!tracksModel)
                     return ({})
@@ -87,9 +93,15 @@ Page {
         }
 
         ViewPlaceholder {
-            enabled: grid.count === 0 && tracksModel && !tracksModel.busy
-            text: qsTr("No playlists")
-            hintText: auth.loggedIn ? "" : qsTr("Sign in to see your playlists")
+            enabled: tab === 0 && grid.count === 0 && tracksModel && !tracksModel.busy
+            text: auth.loggedIn ? qsTr("Your home feed is empty") : qsTr("Sign in to see your home feed")
+            hintText: auth.loggedIn ? qsTr("Follow artists to see their new tracks here") : ""
+        }
+
+        ViewPlaceholder {
+            enabled: tab === 3 && grid.count === 0 && tracksModel && !tracksModel.busy
+            text: auth.loggedIn ? qsTr("No playlists") : qsTr("Sign in to see your playlists")
+            hintText: ""
         }
 
         PullDownMenu {
@@ -112,6 +124,7 @@ Page {
         VerticalScrollDecorator {}
     }
 
+    // Search + Likes: track list
     SilicaListView {
         id: listView
         anchors.fill: parent
@@ -136,6 +149,7 @@ Page {
                 height: Theme.itemSizeMedium
                 opacity: tab === 1 ? 1 : 0
                 enabled: tab === 1
+                visible: tab === 1
                 placeholderText: qsTr("Search tracks")
                 EnterKey.enabled: text.length > 2
                 EnterKey.iconSource: "image://theme/icon-m-search"

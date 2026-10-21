@@ -6,12 +6,18 @@ BackgroundItem {
     property string title: ""
     property string artworkUrl: ""
     property string username: ""
+    property string kind: ""
     property var payload: ({})
 
     width: (Screen.width - Theme.horizontalPageMargin * 2 - Theme.paddingMedium) / 2
     height: width
 
-    onClicked: pageStack.push(Qt.resolvedUrl("../pages/PlaylistPage.qml"), { playlistData: payload })
+    onClicked: {
+        if (kind === "track")
+            pageStack.push(Qt.resolvedUrl("../pages/TrackPage.qml"), { trackData: payload })
+        else
+            pageStack.push(Qt.resolvedUrl("../pages/PlaylistPage.qml"), { playlistData: payload })
+    }
 
     Rectangle {
         anchors.fill: parent

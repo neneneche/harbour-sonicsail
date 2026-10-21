@@ -6,14 +6,15 @@ SoundCloud client for **Sailfish OS**.
 
 ## Features
 
-- **Playlists** tab — your created playlists, library, and saved (liked) playlists
-- **Search** tracks
+- **Home** — your SoundCloud feed (new tracks and reposts from artists you follow)
+- **Search**
 - **Likes**
+- **Playlists**
 - Now playing with seek, **shuffle**, **repeat** (off / all / one)
 - Long-press on a track: open, play next, like / unlike, download
 - **MPRIS** lock-screen / system media controls
 - Download tracks to `Music/Soundsail/` (or app cache)
-- **Auto-download** played tracks after 60% (optional, in Settings)
+- optional: **Auto-download** played tracks after 60%
 
 
 ## Build
@@ -26,8 +27,6 @@ cd harbour-soundsail
 sfdk build-init
 sfdk build
 ```
-
-RPM: `RPMS/harbour-soundsail-<version>-1.aarch64.rpm`
 
 ### Install on device
 
@@ -42,15 +41,15 @@ Permissions: `Internet`, `Audio`, `Music` (Sailjail).
 Uses the **public SoundCloud web API** (`api-v2.soundcloud.com`):
 
 - A `client_id` is discovered at runtime from SoundCloud’s web player (no developer app / paid plan required).
-- Streams come from `media.transcodings` (HLS AAC / progressive). Many tracks are HLS-only.
-- Optional sign-in: import browser cookies for the Sailfish browser, or paste an `oauth_token` cookie for likes / library.
+- Streams come from `media.transcodings` (HLS AAC / progressive).
+- Optional sign-in: in-app sign-in on SoundCloud’s own page (session cookie harvested automatically), or paste an `oauth_token` cookie for likes / library. No developer app or Artist Pro subscription involved.
 
 This is an unofficial client for personal use. Respect SoundCloud’s Terms of Use and always credit uploaders.
 
 ## Authors
 
-- **neneneche**
 - **Xiaomi MiMo v2.6 Pro**
+- **neneneche**
 
 ## Credits
 
@@ -58,10 +57,6 @@ This is an unofficial client for personal use. Respect SoundCloud’s Terms of U
 - [SubMusic](https://github.com/) and other Sailfish media apps — playback patterns on Sailfish OS
 - [Sailfish OS](https://sailfishos.org) / Jolla — Silica UI, icon shape guidance, QtMultimedia
 - SoundCloud — music and public web API
-
-## Links
-
-- Repository: https://github.com/neneneche/harbour-sonicsail
 
 ## License
 

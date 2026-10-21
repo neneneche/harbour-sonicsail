@@ -464,6 +464,15 @@ static QStringList cookieDbCandidates()
 
 static QString queryOauthToken(const QString &dbPath)
 {
+    static bool s_sqlWarned = false;
+    if (!QSqlDatabase::isDriverAvailable(QStringLiteral("QSQLITE"))) {
+        if (!s_sqlWarned) {
+            s_sqlWarned = true;
+            qWarning() << "AuthManager: QSQLITE driver unavailable — cannot read cookie databases";
+        }
+        return QString();
+    }
+
     // SQLite may be in WAL mode — copy main db + wal/shm so we see recent cookies
     const QString tmpBase = QDir::tempPath() + QStringLiteral("/soundsail-cookies.sqlite");
     QFile::remove(tmpBase);
@@ -538,6 +547,109 @@ void AuthManager::importBrowserCookies()
     loginWithToken(token);
 }
 
+static QStringList webProfileRoots()
+{
+    // Sailfish.WebView initializes its Gecko profile from a QStandardPaths
+    // location (CacheLocation in current/older plugin versions; be tolerant
+    // and also cover DataLocation variants).
+    QStringList roots;
+    const QStringList locations = QStringList()
+            << QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
+            << QStandardPaths::writableLocation(QStandardPaths::DataLocation)
+            << QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation);
+    for (const QString &loc : locations) {
+        if (!loc.isEmpty() && !roots.contains(loc))
+            roots.append(loc);
+    }
+    return roots;
+}
+
+static QStringList ownWebProfileCookieDbs()
+{
+    // The cookie store lives inside this app's own sandbox.
+    static bool s_loggedRoots = false;
+    const QStringList roots = webProfileRoots();
+
+    QStringList dbs;
+    for (const QString &root : roots) {
+        if (!QDir(root).exists())
+            continue;
+        QDirIterator it(root, QStringList() << QStringLiteral("cookies.sqlite"),
+                        QDir::Files | QDir::Hidden, QDirIterator::Subdirectories);
+        while (it.hasNext())
+            dbs.append(it.next());
+    }
+    if (!s_loggedRoots) {
+        s_loggedRoots = true;
+        qInfo() << "AuthManager: web profile roots:" << roots << "cookie dbs:" << dbs;
+    }
+    return dbs;
+}
+
+void AuthManager::importOwnWebProfileCookies()
+{
+    if (m_busy || m_loggedIn)
+        return;
+
+    static bool s_loggedEmpty = false;
+    const QStringList dbs = ownWebProfileCookieDbs();
+    for (const QString &dbPath : dbs) {
+        const QString token = queryOauthToken(dbPath);
+        if (!token.isEmpty() && token != m_lastRejectedHarvest) {
+            qInfo() << "AuthManager: harvested oauth_token from" << dbPath
+                    << "len" << token.size();
+            loginWithToken(token);
+            return;
+        }
+    }
+    if (!s_loggedEmpty && dbs.isEmpty()) {
+        s_loggedEmpty = true;
+        qWarning() << "AuthManager: no cookies.sqlite found under web profile roots yet";
+    }
+    // Silent: the WebView page keeps polling until sign-in sets the cookie.
+}
+
+int AuthManager::clearWebProfileSession()
+{
+    int removed = 0;
+    for (const QString &root : webProfileRoots()) {
+        if (!QDir(root).exists())
+            continue;
+        // cookie databases (hidden dirs like .mozilla must be visited)
+        QDirIterator it(root, QDir::Files | QDir::Hidden, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            const QString path = it.next();
+            const QString name = it.fileName();
+            if (name == QLatin1String("cookies.sqlite")
+                    || name == QLatin1String("cookies.sqlite-wal")
+                    || name == QLatin1String("cookies.sqlite-shm")
+                    || name == QLatin1String("cookies.sqlite-journal")
+                    || name == QLatin1String("webappsstore.sqlite")
+                    || name == QLatin1String("webappsstore.sqlite-wal")
+                    || name == QLatin1String("webappsstore.sqlite-shm")) {
+                if (QFile::remove(path))
+                    ++removed;
+            }
+        }
+        // site storage for soundcloud (localStorage etc. — modern Gecko keeps
+        // session material here too, not only in cookies.sqlite)
+        QDirIterator dirIt(root, QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden,
+                           QDirIterator::Subdirectories);
+        QStringList soundcloudDirs;
+        while (dirIt.hasNext()) {
+            dirIt.next();
+            if (dirIt.fileName().contains(QLatin1String("soundcloud"), Qt::CaseInsensitive))
+                soundcloudDirs.append(dirIt.filePath());
+        }
+        for (const QString &dir : soundcloudDirs) {
+            if (QDir(dir).removeRecursively())
+                ++removed;
+        }
+    }
+    qInfo() << "AuthManager: cleared web session files/dirs:" << removed;
+    return removed;
+}
+
 void AuthManager::loginWithToken(const QString &token)
 {
     const QString trimmed = token.trimmed();
@@ -599,12 +711,15 @@ void AuthManager::onTokenVerifyReply()
         // optional: pull username from /me
         const QJsonObject me = QJsonDocument::fromJson(body).object();
         m_userName = me.value(QStringLiteral("username")).toString();
-        emit loginSucceeded();
+        // commit state before navigation reacts to loginSucceeded
         emit authStateChanged();
+        emit loginSucceeded();
         return;
     }
 
     // Token rejected — roll back
+    if (status >= 400 && status < 500)
+        m_lastRejectedHarvest = m_accessToken;
     m_loggedIn = false;
     m_mode = ModeNone;
     m_accessToken.clear();
@@ -630,6 +745,7 @@ void AuthManager::logout()
     m_refreshToken.clear();
     m_expiresAt = 0;
     m_userName.clear();
+    m_lastRejectedHarvest.clear();
     m_store->clear(QStringLiteral("user"));
     emit authStateChanged();
     // re-mint anonymous token for continued browsing

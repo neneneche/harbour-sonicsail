@@ -116,6 +116,37 @@ void TrackModel::appendItems(const QVariantList &items, const QString &nextHref)
     emit hasMoreChanged();
 }
 
+void TrackModel::requestNextHydrateBatch()
+{
+    if (m_plHydrateQueue.isEmpty()) {
+        // all batches done — assemble the ordered track list
+        QVariantList out;
+        for (const QVariant &v : m_plOrder) {
+            const QVariantMap m = v.toMap();
+            if (m.value(QStringLiteral("placeholder")).toBool()) {
+                const QString id = QString::number(qint64(m.value(QStringLiteral("id")).toDouble()));
+                const QVariantMap t = m_plHydrated.value(id);
+                if (!t.isEmpty())
+                    out.append(t);
+            } else {
+                out.append(m);
+            }
+        }
+        m_plOrder.clear();
+        m_plHydrated.clear();
+        m_plHydrateQueue.clear();
+        setBusy(false);
+        setError(QString());
+        resetTo(out, QString());
+        return;
+    }
+    const QStringList ids = m_plHydrateQueue.takeFirst();
+    QVariantMap q;
+    q.insert(QStringLiteral("ids"), ids.join(QLatin1Char(',')));
+    setBusy(true);
+    m_api->get(QStringLiteral("/tracks"), q, tagFor(QStringLiteral("pl-hydrate")));
+}
+
 void TrackModel::beginLoadAll()
 {
     m_loadAll = true;
@@ -150,6 +181,22 @@ void TrackModel::onList(const QString &tag, const QVariantList &items, const QSt
     if (!ownsTag(tag))
         return;
     const QString kind = tag.mid(m_tagPrefix.size());
+
+    // /tracks?ids= batch → raw track objects hydrating playlist stubs
+    if (kind == QLatin1String("pl-hydrate")) {
+        for (const QVariant &v : items) {
+            const QVariantMap raw = v.toMap();
+            if (raw.isEmpty())
+                continue;
+            const QVariantMap norm = JsonParser::trackMap(QJsonObject::fromVariantMap(raw));
+            const QString id = QString::number(qint64(norm.value(QStringLiteral("id")).toDouble()));
+            if (id != QLatin1String("0"))
+                m_plHydrated.insert(id, norm);
+        }
+        requestNextHydrateBatch();
+        return;
+    }
+
     setError(QString());
     QVariantList use = items;
     if (m_lastKind == QLatin1String("likes")) {
@@ -202,10 +249,15 @@ void TrackModel::onSuccess(const QString &tag, const QVariantMap &data)
         return;
     const QString kind = tag.mid(m_tagPrefix.size());
 
-    // GET /playlists/{id} → object with tracks[] (fallback when /tracks 404s).
-    // tracks[] on the object is often a 5-track stub — never treat that as complete.
+    // GET /playlists/{id}?representation=full → object with tracks[].
+    // Only ~5 entries are full objects; the rest are id-only stubs that must
+    // be batch-hydrated via /tracks?ids= (the /playlists/{id}/tracks
+    // subresource no longer exists).
     if (kind == QLatin1String("pl-obj") || kind == QLatin1String("pl")) {
-        QVariantList items;
+        m_plOrder.clear();
+        m_plHydrateQueue.clear();
+        m_plHydrated.clear();
+        QStringList stubIds;
         const QVariantList tracks = data.value(QStringLiteral("tracks")).toList();
         for (const QVariant &tv : tracks) {
             QVariantMap raw = tv.toMap();
@@ -213,45 +265,56 @@ void TrackModel::onSuccess(const QString &tag, const QVariantMap &data)
                 raw = raw.value(QStringLiteral("track")).toMap();
             if (raw.isEmpty())
                 continue;
-            // skip stubs without a title
-            if (raw.value(QStringLiteral("title")).toString().isEmpty()
-                    && raw.value(QStringLiteral("permalink_url")).toString().isEmpty())
-                continue;
-            items.append(JsonParser::trackMap(QJsonObject::fromVariantMap(raw)));
-        }
-        if (items.isEmpty()) {
-            const QJsonObject root = QJsonObject::fromVariantMap(data);
-            items = JsonParser::parseCollection(root);
-        }
-        if (items.isEmpty()) {
-            const QVariantList col = data.value(QStringLiteral("collection")).toList();
-            for (const QVariant &tv : col) {
-                QVariantMap raw = tv.toMap();
-                if (raw.contains(QStringLiteral("track")))
-                    raw = raw.value(QStringLiteral("track")).toMap();
-                if (!raw.isEmpty() && !raw.value(QStringLiteral("title")).toString().isEmpty())
-                    items.append(JsonParser::trackMap(QJsonObject::fromVariantMap(raw)));
+            const bool isStub = raw.value(QStringLiteral("title")).toString().isEmpty()
+                    && raw.value(QStringLiteral("permalink_url")).toString().isEmpty();
+            if (isStub) {
+                const qint64 id = qint64(raw.value(QStringLiteral("id")).toDouble());
+                if (id <= 0)
+                    continue;
+                QVariantMap placeholder;
+                placeholder.insert(QStringLiteral("id"), double(id));
+                placeholder.insert(QStringLiteral("placeholder"), true);
+                m_plOrder.append(placeholder);
+                const QString sid = QString::number(id);
+                if (!stubIds.contains(sid))
+                    stubIds.append(sid);
+            } else {
+                m_plOrder.append(JsonParser::trackMap(QJsonObject::fromVariantMap(raw)));
             }
         }
 
-        const int trackCount = data.value(QStringLiteral("track_count")).toInt();
-        const bool looksLikeStubs = trackCount > 0 && items.size() < trackCount;
-        // If the object only has stub tracks, fetch the full paginated track list instead.
-        if (looksLikeStubs && !m_lastArg.isEmpty() && kind == QLatin1String("pl-obj")) {
-            QString id = m_lastArg;
-            const int c = id.lastIndexOf(QLatin1Char(':'));
-            if (c >= 0)
-                id = id.mid(c + 1);
-            QVariantMap q;
-            q.insert(QStringLiteral("limit"), 200);
-            q.insert(QStringLiteral("linked_partitioning"), 1);
-            m_api->get(QStringLiteral("/playlists/%1/tracks").arg(id),
-                       q, tagFor(QStringLiteral("pl-tracks")));
+        // legacy shapes without tracks[] — plain collection parse
+        if (m_plOrder.isEmpty() && stubIds.isEmpty()) {
+            QVariantList items;
+            const QJsonObject root = QJsonObject::fromVariantMap(data);
+            items = JsonParser::parseCollection(root);
+            if (items.isEmpty()) {
+                const QVariantList col = data.value(QStringLiteral("collection")).toList();
+                for (const QVariant &tv : col) {
+                    QVariantMap raw = tv.toMap();
+                    if (raw.contains(QStringLiteral("track")))
+                        raw = raw.value(QStringLiteral("track")).toMap();
+                    if (!raw.isEmpty() && !raw.value(QStringLiteral("title")).toString().isEmpty())
+                        items.append(JsonParser::trackMap(QJsonObject::fromVariantMap(raw)));
+                }
+            }
+            setBusy(false);
+            setError(QString());
+            resetTo(items, QString());
             return;
         }
+
+        if (!stubIds.isEmpty()) {
+            for (int i = 0; i < stubIds.size(); i += 50)
+                m_plHydrateQueue.append(stubIds.mid(i, 50));
+            requestNextHydrateBatch();
+            return;
+        }
+
         setBusy(false);
         setError(QString());
-        resetTo(items, QString());
+        resetTo(m_plOrder, QString());
+        m_plOrder.clear();
         return;
     }
 
@@ -302,16 +365,13 @@ void TrackModel::onSuccess(const QString &tag, const QVariantMap &data)
         QVariantMap q;
         q.insert(QStringLiteral("limit"), 200);
         q.insert(QStringLiteral("linked_partitioning"), 1);
-        m_plPending = 3;
-        // library (created + saved snapshots)
-        QVariantMap qlib = q;
-        qlib.insert(QStringLiteral("representation"), QStringLiteral("full"));
-        m_api->get(QStringLiteral("/me/library/playlists"), qlib,
-                   tagFor(QStringLiteral("me-pl-lib")));
+        m_plPending = 2;
         // created playlists (own uploads' playlists)
         m_api->get(QStringLiteral("/users/%1/playlists").arg(id), q,
                    tagFor(QStringLiteral("me-pl-created")));
         // saved / liked playlists from other users
+        // (/me/library/* and /playlists/{id}/tracks were removed server-side;
+        // playlist_likes still returns full playlist objects)
         m_api->get(QStringLiteral("/users/%1/playlist_likes").arg(id), q,
                    tagFor(QStringLiteral("me-pl-likes")));
         return;
@@ -365,18 +425,9 @@ void TrackModel::onFailed(const QString &tag, int status, const QString &message
     setBusy(false);
     m_appendMode = false;
 
-    // playlist tracks 404 → try full playlist object (tracks[] fallback)
-    if ((kind == QLatin1String("pl-tracks") || kind == QLatin1String("pl"))
-            && (status == 404 || status == -1 || status == 0)
-            && !m_lastArg.isEmpty()) {
-        QString id = m_lastArg;
-        const int c = id.lastIndexOf(QLatin1Char(':'));
-        if (c >= 0)
-            id = id.mid(c + 1);
-        QVariantMap q;
-        q.insert(QStringLiteral("limit"), 200);
-        q.insert(QStringLiteral("linked_partitioning"), 1);
-        m_api->get(QStringLiteral("/playlists/%1").arg(id), q, tagFor(QStringLiteral("pl-obj")));
+    // a hydration batch failed → skip it, continue with the rest
+    if (kind == QLatin1String("pl-hydrate")) {
+        requestNextHydrateBatch();
         return;
     }
 
@@ -401,6 +452,12 @@ void TrackModel::onFailed(const QString &tag, int status, const QString &message
 
     // history 404/500 → empty, no scary error
     if (m_lastKind == QLatin1String("history") && (status == 404 || status == 500)) {
+        resetTo(QVariantList(), QString());
+        return;
+    }
+
+    // home feed (401 when signed out, or empty feed) → empty, placeholder in UI
+    if (m_lastKind == QLatin1String("home")) {
         resetTo(QVariantList(), QString());
         return;
     }
@@ -459,6 +516,9 @@ void TrackModel::clearItems()
     setError(QString());
     m_loadAll = false;
     m_autoPages = 0;
+    m_plOrder.clear();
+    m_plHydrateQueue.clear();
+    m_plHydrated.clear();
     resetTo(QVariantList(), QString());
 }
 
@@ -519,6 +579,23 @@ void TrackModel::finishPlaylists()
     m_plCollected.clear();
     m_plSeen.clear();
     m_plPageBusy.clear();
+}
+
+void TrackModel::loadHome()
+{
+    m_lastKind = QStringLiteral("home");
+    m_lastQuery.clear();
+    m_lastArg.clear();
+    m_appendMode = false;
+    beginLoadAll();
+    setBusy(true);
+    setError(QString());
+    // SoundCloud home feed: new tracks and reposts from artists you follow
+    // (same endpoint the soundcloud-desktop client uses as its home).
+    QVariantMap q;
+    q.insert(QStringLiteral("limit"), 50);
+    q.insert(QStringLiteral("linked_partitioning"), 1);
+    m_api->get(QStringLiteral("/stream"), q, tagFor(QStringLiteral("list")));
 }
 
 void TrackModel::loadMixes()
@@ -594,6 +671,9 @@ void TrackModel::loadPlaylistTracks(const QString &urn)
     beginLoadAll();
     setBusy(true);
     setError(QString());
+    m_plOrder.clear();
+    m_plHydrateQueue.clear();
+    m_plHydrated.clear();
     QString id = urn;
     const int c = id.lastIndexOf(QLatin1Char(':'));
     if (c >= 0)
@@ -601,9 +681,10 @@ void TrackModel::loadPlaylistTracks(const QString &urn)
     QVariantMap q;
     q.insert(QStringLiteral("limit"), 200);
     q.insert(QStringLiteral("linked_partitioning"), 1);
-    // paginated track collection — load ALL pages (limit is page size only)
-    m_api->get(QStringLiteral("/playlists/%1/tracks").arg(id), q,
-               tagFor(QStringLiteral("pl-tracks")));
+    // /playlists/{id}/tracks was removed (404) — the object endpoint with
+    // representation=full embeds every track as a full object.
+    q.insert(QStringLiteral("representation"), QStringLiteral("full"));
+    m_api->get(QStringLiteral("/playlists/%1").arg(id), q, tagFor(QStringLiteral("pl")));
 }
 
 void TrackModel::loadRelated(const QString &urn)
@@ -663,6 +744,8 @@ void TrackModel::reload()
 {
     if (m_lastKind == QLatin1String("search"))
         search(m_lastQuery);
+    else if (m_lastKind == QLatin1String("home"))
+        loadHome();
     else if (m_lastKind == QLatin1String("charts"))
         loadCharts();
     else if (m_lastKind == QLatin1String("user-tracks"))

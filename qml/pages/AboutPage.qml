@@ -61,7 +61,7 @@ Page {
             Label {
                 x: Theme.horizontalPageMargin
                 width: parent.width - Theme.horizontalPageMargin * 2
-                text: qsTr("Uses the public SoundCloud web API (api-v2.soundcloud.com). A public client_id is discovered at runtime from SoundCloud’s web player. Optional account features use an OAuth token from your browser session. Playback uses SoundCloud’s media transcodings (HLS / progressive).")
+                text: qsTr("Uses the public SoundCloud web API (api-v2.soundcloud.com). A public client_id is discovered at runtime from SoundCloud’s web player. Optional account features sign you in on SoundCloud’s own page inside the app and reuse that browser session. Playback uses SoundCloud’s media transcodings (HLS / progressive).")
                 color: Theme.secondaryColor
                 font.pixelSize: Theme.fontSizeSmall
                 wrapMode: Text.WordWrap

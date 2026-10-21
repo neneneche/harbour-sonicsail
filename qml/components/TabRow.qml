@@ -12,12 +12,13 @@ Row {
 
     Repeater {
         model: [
-            { t: qsTr("Playlists"), i: 0 },
+            { t: qsTr("Home"), i: 0 },
             { t: qsTr("Search"), i: 1 },
-            { t: qsTr("Likes"), i: 2 }
+            { t: qsTr("Likes"), i: 2 },
+            { t: qsTr("Playlists"), i: 3 }
         ]
         BackgroundItem {
-            width: tabRow.width / 3
+            width: tabRow.width / 4
             height: tabRow.height
             onClicked: tabRow.tabSelected(modelData.i)
             Label {

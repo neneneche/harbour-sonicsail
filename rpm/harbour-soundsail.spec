@@ -9,7 +9,7 @@ Name:       harbour-soundsail
 # << macros
 
 Summary:    SoundCloud client for Sailfish OS
-Version:    0.1.0
+Version:    0.2.0
 Release:    1
 Group:      Applications/Multimedia
 License:    BSD-3-Clause
@@ -20,6 +20,7 @@ Requires:   sailfishsilica-qt5
 Requires:   qt5-qtmultimedia
 Requires:   qt5-qtmultimedia-plugin-audio-pulseaudio
 Requires:   mapplauncherd-booster-silica-qt5
+Requires:   sailfish-components-webview-qt5
 BuildRequires:  pkgconfig(sailfishapp)
 BuildRequires:  pkgconfig(Qt5Core)
 BuildRequires:  pkgconfig(Qt5Quick)

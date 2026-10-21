@@ -1,6 +1,6 @@
 Name: harbour-soundsail
 Summary: SoundCloud client for Sailfish OS
-Version: 0.1.0
+Version: 0.2.0
 Release: 1
 Group: Applications/Multimedia
 URL: https://github.com/harbour-soundsail/harbour-soundsail
@@ -27,6 +27,7 @@ Requires:
   - qt5-qtmultimedia
   - qt5-qtmultimedia-plugin-audio-pulseaudio
   - mapplauncherd-booster-silica-qt5
+  - sailfish-components-webview-qt5
 Files:
   - '%{_bindir}/%{name}'
   - '%{_datadir}/%{name}'

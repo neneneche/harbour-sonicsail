@@ -4,6 +4,8 @@
 #include <QVariantList>
 #include <QString>
 #include <QSet>
+#include <QHash>
+#include <QList>
 
 class ApiClient;
 
@@ -42,6 +44,7 @@ public:
     QString errorString() const { return m_error; }
 
     Q_INVOKABLE void search(const QString &query);
+    Q_INVOKABLE void loadHome();
     Q_INVOKABLE void loadCharts();
     Q_INVOKABLE void loadMixes();
     Q_INVOKABLE void loadUserPlaylists();
@@ -71,6 +74,7 @@ private slots:
 private:
     void resetTo(const QVariantList &items, const QString &nextHref);
     void appendItems(const QVariantList &items, const QString &nextHref);
+    void requestNextHydrateBatch();
     void setBusy(bool busy);
     void setError(const QString &e);
     void reload();
@@ -95,6 +99,11 @@ private:
     int m_plPending = 0;
     QSet<QString> m_plSeen;
     QSet<QString> m_plPageBusy;
+    // playlist track hydration: /playlists/{id} embeds only ~5 full tracks,
+    // the rest are id-only stubs batch-hydrated via /tracks?ids=
+    QVariantList m_plOrder;                 // ordered entries; stubs = {id, placeholder}
+    QList<QStringList> m_plHydrateQueue;    // remaining id batches (≤50 each)
+    QHash<QString, QVariantMap> m_plHydrated; // id → normalized track map
     QString m_tagPrefix;
     bool ownsTag(const QString &tag) const;
     QString tagFor(const QString &kind) const;
