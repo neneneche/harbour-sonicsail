@@ -14,6 +14,7 @@
 #include "util/mpriscontroller.h"
 
 #include <sailfishapp.h>
+#include <QTimer>
 
 AppController::AppController(QObject *parent)
     : QObject(parent)
@@ -45,6 +46,21 @@ AppController::AppController(QObject *parent)
         resolver->resolve();
     });
     resolver->resolve();
+
+    // Quiet session re-validation at startup, with visible feedback
+    connect(m_auth, &AuthManager::sessionRefreshing, this, [this]() {
+        m_settings->notify(tr("Refreshing session…"));
+    });
+    connect(m_auth, &AuthManager::sessionRefreshed, this, [this](const QString &name) {
+        m_settings->notify(name.isEmpty() ? tr("Signed in")
+                                          : tr("Signed in as %1").arg(name));
+    });
+    connect(m_auth, &AuthManager::sessionExpired, this, [this]() {
+        m_settings->notify(tr("Session expired — sign in again"));
+    });
+    if (m_auth->isLoggedIn()) {
+        QTimer::singleShot(1200, m_auth, [this]() { m_auth->refreshSession(); });
+    }
 
     m_view = SailfishApp::createView();
     m_view->engine()->addImageProvider(QStringLiteral("cover"),

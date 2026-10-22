@@ -9,8 +9,21 @@ Page {
     property int tab: 0 // 0 home, 1 search, 2 likes, 3 playlists
 
     Component.onCompleted: {
+        // account tabs are gated: signed-out users start on Search
+        if (!auth.loggedIn)
+            tab = 1
         tracksModel = api.createTrackModel()
         loadTimer.start()
+    }
+
+    Connections {
+        target: auth
+        onAuthStateChanged: {
+            if (auth.loggedIn && page.tab === 1)
+                showTab(0) // land on Home after signing in
+            else if (!auth.loggedIn && page.tab !== 1)
+                showTab(1) // fall back to Search when signed out
+        }
     }
 
     Timer {
@@ -73,6 +86,7 @@ Page {
             }
             TabRow {
                 currentTab: tab
+                accountTabsEnabled: auth.loggedIn
                 onTabSelected: showTab(index)
             }
         }
@@ -107,8 +121,7 @@ Page {
         PullDownMenu {
             MenuItem {
                 text: qsTr("Settings")
-                onClicked: pageStack.push(Qt.resolvedUrl(auth.loggedIn ? "AccountPage.qml"
-                                                                        : "LoginPage.qml"))
+                onClicked: pageStack.push(Qt.resolvedUrl("AccountPage.qml"))
             }
             MenuItem {
                 text: qsTr("Now playing")
@@ -140,6 +153,7 @@ Page {
             }
             TabRow {
                 currentTab: tab
+                accountTabsEnabled: auth.loggedIn
                 onTabSelected: showTab(index)
             }
 
@@ -182,8 +196,7 @@ Page {
         PullDownMenu {
             MenuItem {
                 text: qsTr("Settings")
-                onClicked: pageStack.push(Qt.resolvedUrl(auth.loggedIn ? "AccountPage.qml"
-                                                                        : "LoginPage.qml"))
+                onClicked: pageStack.push(Qt.resolvedUrl("AccountPage.qml"))
             }
             MenuItem {
                 text: qsTr("Now playing")

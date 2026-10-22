@@ -24,6 +24,7 @@ public:
                          const QString &tag = QString());
     Q_INVOKABLE void del(const QString &path, const QString &tag = QString());
     Q_INVOKABLE QObject *createTrackModel();
+    QString userId() const;
 
     void setPublicClientId(const QString &id);
     bool usePublicApi() const;

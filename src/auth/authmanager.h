@@ -17,14 +17,18 @@ class AuthManager : public QObject
     Q_PROPERTY(bool loggedIn READ isLoggedIn NOTIFY authStateChanged)
     Q_PROPERTY(bool hasCredentials READ hasCredentials NOTIFY authStateChanged)
     Q_PROPERTY(QString userName READ userName NOTIFY authStateChanged)
+    Q_PROPERTY(QString userId READ userId NOTIFY authStateChanged)
     Q_PROPERTY(QString mode READ modeString NOTIFY authStateChanged)
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
+    // session token for in-page XHR writes (WebWriter bridge)
+    Q_PROPERTY(QString accessToken READ currentToken NOTIFY tokenReady)
 public:
     explicit AuthManager(Settings *settings, QObject *parent = nullptr);
 
     bool isLoggedIn() const { return m_loggedIn; }
     bool hasCredentials() const;
     QString userName() const { return m_userName; }
+    QString userId() const { return m_userId; }
     QString modeString() const;
     bool busy() const { return m_busy; }
 
@@ -43,6 +47,9 @@ public:
     Q_INVOKABLE int clearWebProfileSession();
     Q_INVOKABLE void logout();
     Q_INVOKABLE void cancelLogin();
+    // Quietly re-validate the stored user session at startup; emits
+    // sessionRefreshing / sessionRefreshed(name) / sessionExpired().
+    Q_INVOKABLE void refreshSession();
 
     QString currentToken() const { return m_accessToken; }
     bool isUserMode() const { return m_mode == ModeUser; }
@@ -56,11 +63,15 @@ signals:
     void tokenFailed(const QString &message);
     void loginFailed(const QString &message);
     void loginSucceeded();
+    void sessionRefreshing();
+    void sessionRefreshed(const QString &name);
+    void sessionExpired();
 
 private slots:
     void onTokenReply();
     void onPasswordReply();
     void onTokenVerifyReply();
+    void onSessionCheckReply();
     void onAuthorizeFinished();
 
 private:
@@ -85,9 +96,11 @@ private:
     QString m_refreshToken;
     qint64 m_expiresAt = 0;
     QString m_userName;
+    QString m_userId;
     bool m_loggedIn = false;
     bool m_busy = false;
     bool m_ensurePending = false;
+    bool m_sessionCheckPending = false;
 
     QString m_pkceVerifier;
     QString m_pkceState;

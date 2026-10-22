@@ -19,16 +19,17 @@ Page {
         onTriggered: {
             if (!tracksModel || !playlistData)
                 return
-            var id = playlistData.id
-            if (!id && playlistData.urn) {
-                var u = String(playlistData.urn)
-                id = u.substring(u.lastIndexOf(":") + 1)
-            }
-            if (!id) {
+            // prefer the full URN (system playlists are URN-addressed)
+            var ref = ""
+            if (playlistData.urn && String(playlistData.urn).length > 0)
+                ref = String(playlistData.urn)
+            else if (playlistData.id)
+                ref = String(playlistData.id)
+            if (!ref) {
                 tracksModel.clearItems()
                 return
             }
-            tracksModel.loadPlaylistTracks(String(id))
+            tracksModel.loadPlaylistTracks(ref)
         }
     }
 

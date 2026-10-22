@@ -82,7 +82,14 @@ ScPlaylist parsePlaylist(const QJsonObject &o)
         p.urn = QStringLiteral("soundcloud:playlists:%1").arg(p.id);
     p.title = o.value(QStringLiteral("title")).toString();
     p.description = o.value(QStringLiteral("description")).toString();
+    // artwork: real art → SoundCloud's calculated collage (the 2x2 mosaic the
+    // official clients show for mixes) → uploader avatar
     p.artworkUrl = o.value(QStringLiteral("artwork_url")).toString();
+    if (p.artworkUrl.isEmpty())
+        p.artworkUrl = o.value(QStringLiteral("calculated_artwork_url")).toString();
+    if (p.artworkUrl.isEmpty())
+        p.artworkUrl = o.value(QStringLiteral("user")).toObject()
+                .value(QStringLiteral("avatar_url")).toString();
     p.permalinkUrl = o.value(QStringLiteral("permalink_url")).toString();
     p.trackCount = o.value(QStringLiteral("track_count")).toInt();
     p.durationMs = qint64(o.value(QStringLiteral("duration")).toDouble());
@@ -202,6 +209,21 @@ QVariantList parseCollection(const QJsonObject &root)
             out.append(parseTrack(o).toVariantMap());
         else if (kind == QLatin1String("user"))
             out.append(parseUser(o).toVariantMap());
+        else if (kind == QLatin1String("comment")) {
+            QVariantMap cm;
+            cm.insert(QStringLiteral("body"), o.value(QStringLiteral("body")).toString());
+            const QJsonObject cu = o.value(QStringLiteral("user")).toObject();
+            cm.insert(QStringLiteral("username"),
+                      cu.value(QStringLiteral("username")).toString());
+            cm.insert(QStringLiteral("avatarUrl"),
+                      cu.value(QStringLiteral("avatar_url")).toString());
+            cm.insert(QStringLiteral("timestampMs"),
+                      qint64(o.value(QStringLiteral("timestamp")).toDouble()));
+            cm.insert(QStringLiteral("createdAt"),
+                      o.value(QStringLiteral("created_at")).toString());
+            cm.insert(QStringLiteral("kind"), QStringLiteral("comment"));
+            out.append(cm);
+        }
     }
     return out;
 }

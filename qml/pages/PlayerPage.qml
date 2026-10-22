@@ -22,6 +22,12 @@ Page {
 
         PullDownMenu {
             MenuItem {
+                text: qsTr("Related tracks")
+                enabled: player.title.length > 0
+                onClicked: pageStack.push(Qt.resolvedUrl("TrackPage.qml"),
+                                          { trackData: player.currentTrack })
+            }
+            MenuItem {
                 text: qsTr("Download")
                 enabled: player.permalinkUrl.length > 0 || player.title.length > 0
                 onClicked: {
@@ -100,7 +106,16 @@ Page {
                                     ? "image://theme/icon-favorite-selected"
                                     : "image://theme/icon-favorite"
                         enabled: auth.loggedIn && player.title.length > 0
-                        onClicked: player.toggleCurrentLike()
+                        onClicked: {
+                            player.toggleCurrentLike()
+                            webWriter.like(String(player.currentTrack.id || ""), player.liked,
+                                           function(ok) {
+                                if (!ok) {
+                                    player.toggleCurrentLike()
+                                    settings.notify(qsTr("Could not update like"))
+                                }
+                            })
+                        }
                     }
                 }
                 Label {
@@ -118,6 +133,61 @@ Page {
                     font.pixelSize: Theme.fontSizeSmall
                 }
             }
+
+            // Waveform seek bar — commented out: peaks fetch/compat not working yet
+            /*
+            Item {
+                id: waveBox
+                width: parent.width
+                height: Theme.itemSizeSmall
+                visible: settings.showWaveform && player.waveformSamples.length > 0
+
+                Canvas {
+                    id: waveCanvas
+                    anchors.fill: parent
+                    property int pos: player.position
+                    property int dur: player.duration
+                    onPosChanged: requestPaint()
+                    onDurChanged: requestPaint()
+                    onWidthChanged: requestPaint()
+                    onHeightChanged: requestPaint()
+                    Connections {
+                        target: player
+                        onWaveformChanged: waveCanvas.requestPaint()
+                    }
+                    onPaint: {
+                        var ctx = getContext("2d")
+                        ctx.clearRect(0, 0, width, height)
+                        var samples = player.waveformSamples
+                        var n = samples.length
+                        if (n === 0 || width <= 0 || height <= 0)
+                            return
+                        var maxV = 0
+                        for (var i = 0; i < n; i++)
+                            if (samples[i] > maxV) maxV = samples[i]
+                        var scale = maxV > 0 ? 1.0 / maxV : 1
+                        var ratio = player.duration > 0 ? (player.position / player.duration) : 0
+                        var barW = width / n
+                        var mid = height / 2
+                        for (var j = 0; j < n; j++) {
+                            var h = Math.max(1, samples[j] * scale * height * 0.92)
+                            ctx.fillStyle = (j / n) <= ratio
+                                    ? Theme.highlightColor.toString()
+                                    : Theme.secondaryColor.toString()
+                            ctx.fillRect(j * barW, mid - h / 2, Math.max(1, barW * 0.7), h)
+                        }
+                    }
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        if (player.duration > 0)
+                            player.seek(Math.round(mouse.x / width * player.duration))
+                    }
+                }
+            }
+            */
 
             Slider {
                 id: progressSlider
@@ -206,6 +276,21 @@ Page {
                         contentHeight: Theme.itemSizeSmall
                         menu: Component {
                             ContextMenu {
+                                MenuItem {
+                                    text: qsTr("Play next")
+                                    enabled: index !== queue.currentIndex + 1
+                                    onClicked: queue.move(index, Math.min(queue.currentIndex + 1, queue.count - 1))
+                                }
+                                MenuItem {
+                                    text: qsTr("Move up")
+                                    enabled: index > 0
+                                    onClicked: queue.move(index, index - 1)
+                                }
+                                MenuItem {
+                                    text: qsTr("Move down")
+                                    enabled: index < queue.count - 1
+                                    onClicked: queue.move(index, index + 1)
+                                }
                                 MenuItem {
                                     text: qsTr("Remove from queue")
                                     onClicked: queue.removeAt(index)

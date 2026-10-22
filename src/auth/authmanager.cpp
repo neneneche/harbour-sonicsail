@@ -711,6 +711,7 @@ void AuthManager::onTokenVerifyReply()
         // optional: pull username from /me
         const QJsonObject me = QJsonDocument::fromJson(body).object();
         m_userName = me.value(QStringLiteral("username")).toString();
+        m_userId = QString::number(qint64(me.value(QStringLiteral("id")).toDouble()));
         // commit state before navigation reacts to loginSucceeded
         emit authStateChanged();
         emit loginSucceeded();
@@ -724,6 +725,7 @@ void AuthManager::onTokenVerifyReply()
     m_mode = ModeNone;
     m_accessToken.clear();
     m_userName.clear();
+    m_userId.clear();
     m_store->clear(QStringLiteral("user"));
     emit authStateChanged();
     emit loginFailed(tr("Token rejected (%1) — copy oauth_token from soundcloud.com cookies").arg(status));
@@ -745,11 +747,93 @@ void AuthManager::logout()
     m_refreshToken.clear();
     m_expiresAt = 0;
     m_userName.clear();
+    m_userId.clear();
     m_lastRejectedHarvest.clear();
+    m_sessionCheckPending = false;
     m_store->clear(QStringLiteral("user"));
     emit authStateChanged();
     // re-mint anonymous token for continued browsing
     mintClientCredentials();
+}
+
+void AuthManager::refreshSession()
+{
+    if (!m_loggedIn || m_accessToken.isEmpty())
+        return;
+
+    emit sessionRefreshing();
+
+    const QString clientId = m_settings->clientId();
+    QNetworkRequest req(QUrl(QStringLiteral(
+        "https://api-v2.soundcloud.com/me?client_id=%1").arg(clientId)));
+    req.setRawHeader("Accept", "application/json");
+    req.setRawHeader("Authorization", ("OAuth " + m_accessToken).toUtf8());
+    req.setRawHeader("User-Agent",
+                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+
+    if (m_pending) {
+        m_pending->disconnect(this);
+        m_pending->abort();
+    }
+    m_pending = m_nam.get(req);
+    connect(m_pending, &QNetworkReply::finished, this, &AuthManager::onSessionCheckReply);
+}
+
+void AuthManager::onSessionCheckReply()
+{
+    QNetworkReply *reply = qobject_cast<QNetworkReply *>(sender());
+    if (!reply)
+        return;
+    reply->deleteLater();
+    if (reply == m_pending)
+        m_pending = nullptr;
+
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const QByteArray body = reply->readAll();
+
+    if (status == 200) {
+        const QJsonObject me = QJsonDocument::fromJson(body).object();
+        m_userName = me.value(QStringLiteral("username")).toString();
+        m_userId = QString::number(qint64(me.value(QStringLiteral("id")).toDouble()));
+        qInfo() << "AuthManager: session refreshed for" << m_userName;
+        emit sessionRefreshed(m_userName);
+        emit authStateChanged();
+        return;
+    }
+
+    if (status >= 400 && status < 500) {
+        // stored token dead — try one silent re-harvest from the web profile
+        qInfo() << "AuthManager: stored session rejected (" << status
+                << "), trying web profile re-harvest";
+        m_sessionCheckPending = true;
+        m_lastRejectedHarvest = m_accessToken;
+        m_loggedIn = false;
+        m_mode = ModeNone;
+        m_accessToken.clear();
+        m_userName.clear();
+        m_userId.clear();
+        m_store->clear(QStringLiteral("user"));
+        emit authStateChanged();
+        importOwnWebProfileCookies();
+        QTimer::singleShot(3000, this, [this]() {
+            if (!m_sessionCheckPending)
+                return;
+            m_sessionCheckPending = false;
+            if (m_loggedIn) {
+                emit sessionRefreshed(m_userName);
+            } else {
+                qInfo() << "AuthManager: session refresh failed";
+                emit sessionExpired();
+                emit authStateChanged();
+                mintClientCredentials();
+            }
+        });
+        return;
+    }
+
+    // transient error — keep the session as-is
+    qWarning() << "AuthManager: session check failed transiently" << status;
 }
 
 void AuthManager::onAuthorizeFinished()

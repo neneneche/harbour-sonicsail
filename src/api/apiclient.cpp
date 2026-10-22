@@ -140,8 +140,13 @@ void ApiClient::dispatch(const Pending &p)
         reply = m_nam.post(req, QJsonDocument::fromVariant(p.body).toJson(QJsonDocument::Compact));
     } else if (p.method == QLatin1String("PUT")) {
         QNetworkRequest req = makeRequest(url, authorized);
-        req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
-        reply = m_nam.put(req, QJsonDocument::fromVariant(p.body).toJson(QJsonDocument::Compact));
+        // empty body: web-app shaped PUTs (e.g. likes) send no payload
+        if (p.body.isEmpty())
+            reply = m_nam.put(req, QByteArray());
+        else {
+            req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+            reply = m_nam.put(req, QJsonDocument::fromVariant(p.body).toJson(QJsonDocument::Compact));
+        }
     } else if (p.method == QLatin1String("DELETE")) {
         reply = m_nam.deleteResource(makeRequest(url, authorized));
     } else {
@@ -163,6 +168,11 @@ void ApiClient::dispatch(const Pending &p)
 QObject *ApiClient::createTrackModel()
 {
     return new TrackModel(this, this);
+}
+
+QString ApiClient::userId() const
+{
+    return m_auth ? m_auth->userId() : QString();
 }
 
 void ApiClient::get(const QString &path, const QVariantMap &query, const QString &tag)

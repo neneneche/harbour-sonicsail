@@ -12,6 +12,7 @@ class Settings : public QObject
     Q_PROPERTY(QString lastVolume READ lastVolume WRITE setLastVolume NOTIFY lastVolumeChanged)
     Q_PROPERTY(bool saveToMusic READ saveToMusic WRITE setSaveToMusic NOTIFY saveToMusicChanged)
     Q_PROPERTY(bool autoDownloadPlayed READ autoDownloadPlayed WRITE setAutoDownloadPlayed NOTIFY autoDownloadPlayedChanged)
+    Q_PROPERTY(bool showWaveform READ showWaveform WRITE setShowWaveform NOTIFY showWaveformChanged)
 public:
     explicit Settings(QObject *parent = nullptr);
 
@@ -30,6 +31,8 @@ public:
 
     bool autoDownloadPlayed() const;
     void setAutoDownloadPlayed(bool on);
+    bool showWaveform() const;
+    void setShowWaveform(bool on);
 
     Q_INVOKABLE void setRuntimeCredentials(const QString &clientId, const QString &clientSecret);
     Q_INVOKABLE void clearCredentials();
@@ -45,6 +48,7 @@ signals:
     void lastVolumeChanged();
     void saveToMusicChanged();
     void autoDownloadPlayedChanged();
+    void showWaveformChanged();
     void loginCodeProvided(const QString &code);
     void notifyRequested(const QString &message);
 

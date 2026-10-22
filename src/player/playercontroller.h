@@ -5,7 +5,10 @@
 #include <QAbstractListModel>
 #include <QTimer>
 #include <QVariantMap>
+#include <QVariantList>
 #include <QUrl>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
 
 class ApiClient;
 class TrackQueue;
@@ -20,6 +23,8 @@ class PlayerController : public QObject
     Q_PROPERTY(QString artist READ artist NOTIFY trackChanged)
     Q_PROPERTY(QString artworkUrl READ artworkUrl NOTIFY trackChanged)
     Q_PROPERTY(QString permalinkUrl READ permalinkUrl NOTIFY trackChanged)
+    Q_PROPERTY(QVariantMap currentTrack READ currentTrack NOTIFY trackChanged)
+    Q_PROPERTY(QVariantList waveformSamples READ waveformSamples NOTIFY waveformChanged)
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
     Q_PROPERTY(QString statusMessage READ statusMessage NOTIFY statusMessageChanged)
     Q_PROPERTY(bool shuffle READ shuffle WRITE setShuffle NOTIFY shuffleChanged)
@@ -44,6 +49,7 @@ public:
     void setRepeatMode(int mode);
     bool liked() const;
     Q_INVOKABLE void toggleCurrentLike();
+    QVariantMap currentTrack() const;
 
     Q_INVOKABLE void playIndex(int index);
     Q_INVOKABLE void playTrack(const QVariantMap &track);
@@ -53,6 +59,7 @@ public:
     Q_INVOKABLE void shuffleQueue();
     Q_INVOKABLE void toggleLike(const QVariantMap &track);
     Q_INVOKABLE void likeTrack(const QString &urn, bool like);
+    QVariantList waveformSamples() const { return m_waveformSamples; }
     Q_INVOKABLE void toggle();
     Q_INVOKABLE void play();
     Q_INVOKABLE void pause();
@@ -71,6 +78,7 @@ signals:
     void shuffleChanged();
     void repeatModeChanged();
     void likedChanged();
+    void waveformChanged();
     void errorOccurred(const QString &message);
 
 private slots:
@@ -80,6 +88,7 @@ private slots:
     void onStreamsReceived(const QString &tag, const QVariantMap &data);
     void onRelatedReceived(const QString &tag, const QVariantMap &data);
     void onApiFailed(const QString &tag, int status, const QString &message);
+    void onWaveformReply();
     void onTick();
 
 private:
@@ -90,6 +99,7 @@ private:
     void setBusy(bool busy);
     void setStatus(const QString &msg);
     void updateMetadata();
+    void loadWaveform(const QVariantMap &track);
     void reportPlayed();
     void handlePlaybackFailure(const QString &message);
 
@@ -104,8 +114,13 @@ private:
     QString m_permalinkUrl;
     QString m_currentUrn;
     QStringList m_candidates;
+    QString m_pendingLikeUrn;
+    bool m_pendingLikeWanted = false;
     QStringList m_transcodingUrls;
     QString m_pendingTranscoding;
+    QVariantList m_waveformSamples;
+    QNetworkAccessManager m_waveNam;
+    QNetworkReply *m_waveReply = nullptr;
     int m_candidateIndex = -1;
     int m_position = 0;
     int m_duration = 0;

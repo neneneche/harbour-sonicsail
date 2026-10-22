@@ -43,7 +43,22 @@ ListItem {
             MenuItem {
                 text: model.userFavorite ? qsTr("Remove from likes") : qsTr("Add to likes")
                 enabled: auth.loggedIn && !delegate.isPlaylist()
-                onClicked: player.toggleLike(trackMap())
+                onClicked: {
+                    var item = trackMap()
+                    var want = !model.userFavorite
+                    player.toggleLike(item)
+                    if (typeof tracksModel !== "undefined" && tracksModel && item && item.urn)
+                        tracksModel.setFavorite(item.urn, want)
+                    if (item)
+                        webWriter.like(String(item.id || ""), want, function(ok) {
+                            if (!ok) {
+                                player.toggleLike(item)
+                                if (typeof tracksModel !== "undefined" && tracksModel && item && item.urn)
+                                    tracksModel.setFavorite(item.urn, !want)
+                                settings.notify(qsTr("Could not update like"))
+                            }
+                        })
+                }
             }
         }
     }

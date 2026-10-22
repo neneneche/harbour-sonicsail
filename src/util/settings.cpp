@@ -138,6 +138,17 @@ void Settings::setAutoDownloadPlayed(bool on)
     emit autoDownloadPlayedChanged();
 }
 
+bool Settings::showWaveform() const
+{
+    return confValue(QStringLiteral("showWaveform")) == QLatin1String("true");
+}
+
+void Settings::setShowWaveform(bool on)
+{
+    setConfValue(QStringLiteral("showWaveform"), on ? QStringLiteral("true") : QStringLiteral("false"));
+    emit showWaveformChanged();
+}
+
 void Settings::completeLoginWithCode(const QString &code)
 {
     emit loginCodeProvided(code);

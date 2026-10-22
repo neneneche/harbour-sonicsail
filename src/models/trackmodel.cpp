@@ -147,6 +147,86 @@ void TrackModel::requestNextHydrateBatch()
     m_api->get(QStringLiteral("/tracks"), q, tagFor(QStringLiteral("pl-hydrate")));
 }
 
+void TrackModel::requestHomeFeed()
+{
+    // SoundCloud home feed: new tracks and reposts from artists you follow
+    QVariantMap q;
+    q.insert(QStringLiteral("limit"), 50);
+    q.insert(QStringLiteral("linked_partitioning"), 1);
+    m_api->get(QStringLiteral("/stream"), q, tagFor(QStringLiteral("list")));
+}
+
+// Queue cover fetches for artwork-less playlist tiles (mixes, stations,
+// genre mixes — shelf AND feed items alike). Results are applied to the
+// visible rows once fetched (2x2 mosaic from the first tracks' covers).
+void TrackModel::queueCoverFetches(const QVariantList &items)
+{
+    m_mixArtRows.clear();
+    m_mixArtPaths.clear();
+    m_mixArtIds.clear();
+    for (int i = 0; i < items.size(); ++i) {
+        const QVariantMap m = items.at(i).toMap();
+        if (!m.value(QStringLiteral("artworkUrl")).toString().isEmpty())
+            continue;
+        if (m_mixArtRows.size() >= 8)
+            break;
+        const QString kind = m.value(QStringLiteral("kind")).toString();
+        QString urn = m.value(QStringLiteral("urn")).toString();
+        const QString id = QString::number(qint64(m.value(QStringLiteral("id")).toDouble()));
+        if (id.isEmpty() || id == QLatin1String("0"))
+            continue;
+
+        QString path;
+        if (kind == QLatin1String("system-playlist")
+                || urn.contains(QLatin1String("system-playlists"))) {
+            // full URN form only (short form → 400)
+            if (!urn.contains(QLatin1String("system-playlists")))
+                urn = QStringLiteral("soundcloud:system-playlists:") + id;
+            else if (!urn.startsWith(QLatin1String("soundcloud:")))
+                urn.prepend(QStringLiteral("soundcloud:"));
+            path = QStringLiteral("/system-playlists/") + urn;
+        } else {
+            // plain playlist: object endpoint embeds the first full tracks
+            path = QStringLiteral("/playlists/") + id;
+        }
+        m_mixArtRows.append(i);
+        m_mixArtPaths.append(path);
+        m_mixArtIds.append(id);
+    }
+    processNextMixArt();
+}
+
+void TrackModel::processNextMixArt()
+{
+    if (m_mixArtPaths.isEmpty()) {
+        m_mixArtRow = -1;
+        return;
+    }
+    m_mixArtRow = m_mixArtRows.takeFirst();
+    m_mixArtPath = m_mixArtPaths.takeFirst();
+    m_mixArtItemId = m_mixArtIds.takeFirst();
+    m_mixArtArts.clear();
+    QVariantMap q;
+    q.insert(QStringLiteral("limit"), 5);
+    q.insert(QStringLiteral("representation"), QStringLiteral("full"));
+    m_api->get(m_mixArtPath, q, tagFor(QStringLiteral("home-mix-art")));
+}
+
+void TrackModel::setMixArtwork(int row, const QString &itemId, const QVariantList &arts)
+{
+    if (arts.isEmpty() || row < 0 || row >= m_items.size())
+        return;
+    QVariantMap m = m_items.at(row).toMap();
+    // stale response (list was reloaded) → ignore
+    const QString id = QString::number(qint64(m.value(QStringLiteral("id")).toDouble()));
+    if (!itemId.isEmpty() && id != itemId)
+        return;
+    m.insert(QStringLiteral("artworkCandidates"), arts);
+    m_items[row] = m;
+    const QModelIndex idx = index(row, 0);
+    emit dataChanged(idx, idx);
+}
+
 void TrackModel::beginLoadAll()
 {
     m_loadAll = true;
@@ -182,6 +262,28 @@ void TrackModel::onList(const QString &tag, const QVariantList &items, const QSt
         return;
     const QString kind = tag.mid(m_tagPrefix.size());
 
+    // /tracks?ids= batch hydrating mosaic covers (JSON array → onList)
+    if (kind == QLatin1String("home-mix-art-hydrate")) {
+        for (const QVariant &v : items) {
+            if (m_mixArtArts.size() >= 4)
+                break;
+            QVariantMap raw = v.toMap();
+            if (raw.contains(QStringLiteral("track")))
+                raw = raw.value(QStringLiteral("track")).toMap();
+            QString art = raw.value(QStringLiteral("artwork_url")).toString();
+            if (art.isEmpty())
+                art = raw.value(QStringLiteral("artworkUrl")).toString();
+            if (art.isEmpty())
+                art = raw.value(QStringLiteral("user")).toMap()
+                        .value(QStringLiteral("avatar_url")).toString();
+            if (!art.isEmpty())
+                m_mixArtArts.append(art);
+        }
+        setMixArtwork(m_mixArtRow, m_mixArtItemId, m_mixArtArts);
+        processNextMixArt();
+        return;
+    }
+
     // /tracks?ids= batch → raw track objects hydrating playlist stubs
     if (kind == QLatin1String("pl-hydrate")) {
         for (const QVariant &v : items) {
@@ -199,6 +301,15 @@ void TrackModel::onList(const QString &tag, const QVariantList &items, const QSt
 
     setError(QString());
     QVariantList use = items;
+    // first Home page: shelf of mixes above the feed
+    if (m_lastKind == QLatin1String("home") && !m_appendMode) {
+        if (!m_homeMixes.isEmpty()) {
+            use = m_homeMixes + use;
+            m_homeMixes.clear();
+        }
+        // artwork-less mix tiles (shelf AND feed) get 2x2 cover mosaics
+        queueCoverFetches(use);
+    }
     if (m_lastKind == QLatin1String("likes")) {
         use.clear();
         for (const QVariant &v : items) {
@@ -318,6 +429,49 @@ void TrackModel::onSuccess(const QString &tag, const QVariantMap &data)
         return;
     }
 
+    // /mixed-selections → "Made for you" shelf (system playlists / mixes)
+    if (kind == QLatin1String("home-mixes")) {
+        const QJsonObject root = QJsonObject::fromVariantMap(data);
+        m_homeMixes = JsonParser::parseCollection(root);
+        requestHomeFeed();
+        return;
+    }
+
+    // artwork fetch for a mix without artwork → 2x2 mosaic candidates
+    if (kind == QLatin1String("home-mix-art")) {
+        m_mixArtArts.clear();
+        QStringList stubIds;
+        const QVariantList tracks = data.value(QStringLiteral("tracks")).toList();
+        for (const QVariant &tv : tracks) {
+            QVariantMap raw = tv.toMap();
+            if (raw.contains(QStringLiteral("track")))
+                raw = raw.value(QStringLiteral("track")).toMap();
+            QString art = raw.value(QStringLiteral("artwork_url")).toString();
+            if (art.isEmpty())
+                art = raw.value(QStringLiteral("artworkUrl")).toString();
+            if (art.isEmpty())
+                art = raw.value(QStringLiteral("user")).toMap()
+                        .value(QStringLiteral("avatar_url")).toString();
+            if (!art.isEmpty() && m_mixArtArts.size() < 4)
+                m_mixArtArts.append(art);
+            else if (art.isEmpty() && stubIds.size() < 4) {
+                const qint64 id = qint64(raw.value(QStringLiteral("id")).toDouble());
+                if (id > 0)
+                    stubIds.append(QString::number(id));
+            }
+        }
+        // system-playlist track lists are id-only stubs — hydrate covers
+        if (m_mixArtArts.size() < 4 && !stubIds.isEmpty()) {
+            QVariantMap q;
+            q.insert(QStringLiteral("ids"), stubIds.join(QLatin1Char(',')));
+            m_api->get(QStringLiteral("/tracks"), q, tagFor(QStringLiteral("home-mix-art-hydrate")));
+            return;
+        }
+        setMixArtwork(m_mixArtRow, m_mixArtItemId, m_mixArtArts);
+        processNextMixArt();
+        return;
+    }
+
     // /me/library/playlists, /users/{id}/playlists, /users/{id}/playlist_likes → merge
     if (kind == QLatin1String("me-pl-lib") || kind == QLatin1String("me-pl-created")
             || kind == QLatin1String("me-pl-likes")) {
@@ -431,6 +585,18 @@ void TrackModel::onFailed(const QString &tag, int status, const QString &message
         return;
     }
 
+    // mixes shelf failed (e.g. signed out) → continue with the feed anyway
+    if (kind == QLatin1String("home-mixes")) {
+        requestHomeFeed();
+        return;
+    }
+
+    // one mix-artwork fetch failed → continue
+    if (kind == QLatin1String("home-mix-art") || kind == QLatin1String("home-mix-art-hydrate")) {
+        processNextMixArt();
+        return;
+    }
+
     // mixes failed → charts resolve → generic search
     if (m_lastKind == QLatin1String("mixes") && (status == 404 || status == 400 || status == -1 || status == 500)) {
         QVariantMap q;
@@ -456,9 +622,12 @@ void TrackModel::onFailed(const QString &tag, int status, const QString &message
         return;
     }
 
-    // home feed (401 when signed out, or empty feed) → empty, placeholder in UI
+    // home feed (401 when signed out, or empty feed) → shelf of mixes if any,
+    // otherwise empty with the placeholder in UI
     if (m_lastKind == QLatin1String("home")) {
-        resetTo(QVariantList(), QString());
+        const QVariantList mixes = m_homeMixes;
+        m_homeMixes.clear();
+        resetTo(mixes, QString());
         return;
     }
 
@@ -587,15 +756,15 @@ void TrackModel::loadHome()
     m_lastQuery.clear();
     m_lastArg.clear();
     m_appendMode = false;
+    m_homeMixes.clear();
     beginLoadAll();
     setBusy(true);
     setError(QString());
-    // SoundCloud home feed: new tracks and reposts from artists you follow
-    // (same endpoint the soundcloud-desktop client uses as its home).
+    // 1) "Made for you" shelf (Daily Drops, Weekly Wave, … system playlists)
     QVariantMap q;
-    q.insert(QStringLiteral("limit"), 50);
-    q.insert(QStringLiteral("linked_partitioning"), 1);
-    m_api->get(QStringLiteral("/stream"), q, tagFor(QStringLiteral("list")));
+    q.insert(QStringLiteral("limit"), 20);
+    m_api->get(QStringLiteral("/mixed-selections"), q, tagFor(QStringLiteral("home-mixes")));
+    // /stream is requested once the shelf response is known (success or failure)
 }
 
 void TrackModel::loadMixes()
@@ -675,15 +844,32 @@ void TrackModel::loadPlaylistTracks(const QString &urn)
     m_plHydrateQueue.clear();
     m_plHydrated.clear();
     QString id = urn;
-    const int c = id.lastIndexOf(QLatin1Char(':'));
-    if (c >= 0)
-        id = id.mid(c + 1);
     QVariantMap q;
     q.insert(QStringLiteral("limit"), 200);
     q.insert(QStringLiteral("linked_partitioning"), 1);
     // /playlists/{id}/tracks was removed (404) — the object endpoint with
-    // representation=full embeds every track as a full object.
+    // representation=full embeds every track as a full object (remaining
+    // entries are id-only stubs hydrated via /tracks?ids=).
     q.insert(QStringLiteral("representation"), QStringLiteral("full"));
+
+    if (id.contains(QLatin1String("system-playlists"))
+            || id.contains(QLatin1String("-stations:"))
+            || id.startsWith(QLatin1String("charts-"))) {
+        // mixes / stations / charts: URN-addressed system playlist endpoint.
+        // Only the full URN form is accepted (short form → 400).
+        if (!id.contains(QLatin1String("system-playlists"))) {
+            if (id.startsWith(QLatin1String("soundcloud:")))
+                id = id.mid(11);
+            id = QStringLiteral("soundcloud:system-playlists:") + id;
+        } else if (!id.startsWith(QLatin1String("soundcloud:"))) {
+            id.prepend(QStringLiteral("soundcloud:"));
+        }
+        m_api->get(QStringLiteral("/system-playlists/") + id, q, tagFor(QStringLiteral("pl")));
+        return;
+    }
+    const int c = id.lastIndexOf(QLatin1Char(':'));
+    if (c >= 0)
+        id = id.mid(c + 1);
     m_api->get(QStringLiteral("/playlists/%1").arg(id), q, tagFor(QStringLiteral("pl")));
 }
 
@@ -778,4 +964,18 @@ QVariantMap TrackModel::get(int row) const
     if (row < 0 || row >= m_items.size())
         return QVariantMap();
     return m_items.at(row).toMap();
+}
+
+void TrackModel::setFavorite(const QString &urn, bool favorite)
+{
+    for (int i = 0; i < m_items.size(); ++i) {
+        QVariantMap m = m_items.at(i).toMap();
+        if (m.value(QStringLiteral("urn")).toString() == urn) {
+            m.insert(QStringLiteral("userFavorite"), favorite);
+            m_items[i] = m;
+            const QModelIndex idx = index(i, 0);
+            emit dataChanged(idx, idx);
+            break;
+        }
+    }
 }

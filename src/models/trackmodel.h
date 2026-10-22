@@ -59,6 +59,7 @@ public:
     Q_INVOKABLE void refresh();
     Q_INVOKABLE void setItems(const QVariantList &items);
     Q_INVOKABLE QVariantMap get(int row) const;
+    Q_INVOKABLE void setFavorite(const QString &urn, bool favorite);
 
 signals:
     void busyChanged();
@@ -75,6 +76,10 @@ private:
     void resetTo(const QVariantList &items, const QString &nextHref);
     void appendItems(const QVariantList &items, const QString &nextHref);
     void requestNextHydrateBatch();
+    void requestHomeFeed();
+    void queueCoverFetches(const QVariantList &items);
+    void processNextMixArt();
+    void setMixArtwork(int row, const QString &itemId, const QVariantList &arts);
     void setBusy(bool busy);
     void setError(const QString &e);
     void reload();
@@ -104,6 +109,14 @@ private:
     QVariantList m_plOrder;                 // ordered entries; stubs = {id, placeholder}
     QList<QStringList> m_plHydrateQueue;    // remaining id batches (≤50 each)
     QHash<QString, QVariantMap> m_plHydrated; // id → normalized track map
+    QVariantList m_homeMixes;               // /mixed-selections shelf prepended to Home
+    QList<int> m_mixArtRows;                // rows in m_items awaiting cover fetch (parallel)
+    QStringList m_mixArtPaths;              // request paths (/system-playlists/urn or /playlists/id)
+    QStringList m_mixArtIds;                // item ids for staleness checks
+    int m_mixArtRow = -1;                   // current row
+    QString m_mixArtPath;                   // current request path
+    QString m_mixArtItemId;                 // current item id
+    QVariantList m_mixArtArts;              // covers collected for current item
     QString m_tagPrefix;
     bool ownsTag(const QString &tag) const;
     QString tagFor(const QString &kind) const;

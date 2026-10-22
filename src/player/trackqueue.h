@@ -39,6 +39,7 @@ public:
     Q_INVOKABLE void append(const QVariantMap &track);
     Q_INVOKABLE void insertNext(const QVariantMap &track);
     Q_INVOKABLE void removeAt(int idx);
+    Q_INVOKABLE void move(int from, int to);
     Q_INVOKABLE void clear();
     Q_INVOKABLE QVariantMap get(int idx) const;
     Q_INVOKABLE void setFavorite(const QString &urn, bool favorite);

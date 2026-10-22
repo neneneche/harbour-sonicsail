@@ -9,6 +9,23 @@ BackgroundItem {
     property string kind: ""
     property var payload: ({})
 
+    // artwork-less mixes get a 2x2 mosaic of the first tracks' covers
+    property var mosaicArt: {
+        if (artworkUrl && artworkUrl.length > 0)
+            return []
+        if (payload && payload.artworkCandidates && payload.artworkCandidates.length > 0)
+            return payload.artworkCandidates
+        var out = []
+        var tracks = payload && payload.tracks ? payload.tracks : []
+        for (var i = 0; i < tracks.length && out.length < 4; i++) {
+            var t = tracks[i]
+            var u = t && (t.artworkUrl || t.artwork_url)
+            if (u)
+                out.push(u)
+        }
+        return out
+    }
+
     width: (Screen.width - Theme.horizontalPageMargin * 2 - Theme.paddingMedium) / 2
     height: width
 
@@ -29,7 +46,34 @@ BackgroundItem {
             anchors.fill: parent
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
+            visible: tile.mosaicArt.length === 0
             source: tile.artworkUrl ? tile.artworkUrl : ""
+        }
+
+        // 2x2 mosaic when there is no single artwork
+        Grid {
+            anchors.fill: parent
+            columns: 2
+            rows: 2
+            visible: tile.mosaicArt.length > 0
+            Repeater {
+                model: 4
+                Item {
+                    width: tile.width / 2
+                    height: tile.height / 2
+                    Image {
+                        anchors.fill: parent
+                        fillMode: Image.PreserveAspectCrop
+                        asynchronous: true
+                        source: index < tile.mosaicArt.length ? tile.mosaicArt[index] : ""
+                    }
+                    Rectangle {
+                        anchors.fill: parent
+                        color: Theme.rgba(Theme.highlightColor, 0.10)
+                        visible: !(index < tile.mosaicArt.length)
+                    }
+                }
+            }
         }
 
         // gradient scrim for title

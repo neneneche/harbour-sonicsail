@@ -15,6 +15,8 @@
 #include <QStandardPaths>
 #include <QDateTime>
 #include <QJsonObject>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <algorithm>
 
 PlayerController::PlayerController(ApiClient *api, TrackQueue *queue, QObject *parent)
@@ -68,6 +70,67 @@ void PlayerController::setStatus(const QString &msg)
     emit statusMessageChanged();
 }
 
+void PlayerController::loadWaveform(const QVariantMap &track)
+{
+    m_waveformSamples.clear();
+    emit waveformChanged();
+
+    QString u = track.value(QStringLiteral("waveformUrl")).toString();
+    if (u.isEmpty())
+        u = track.value(QStringLiteral("waveform_url")).toString();
+    if (u.isEmpty())
+        return;
+    // waveform png serves the same peaks as json; URLs may already be json
+    if (u.endsWith(QLatin1String(".png"))) {
+        u.chop(4);
+        u += QStringLiteral(".json");
+    } else {
+        const int png = u.indexOf(QLatin1String(".png"));
+        if (png > 0)
+            u = u.left(png) + QStringLiteral(".json");
+    }
+
+    if (m_waveReply) {
+        m_waveReply->disconnect(this);
+        m_waveReply->abort();
+        m_waveReply = nullptr;
+    }
+    QNetworkRequest req{QUrl(u)};
+    req.setRawHeader("User-Agent",
+                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+    req.setRawHeader("Referer", "https://soundcloud.com/");
+    req.setRawHeader("Accept", "application/json");
+    m_waveReply = m_waveNam.get(req);
+    connect(m_waveReply, &QNetworkReply::finished, this, &PlayerController::onWaveformReply);
+}
+
+void PlayerController::onWaveformReply()
+{
+    QNetworkReply *reply = qobject_cast<QNetworkReply *>(sender());
+    if (!reply)
+        return;
+    reply->deleteLater();
+    if (reply == m_waveReply)
+        m_waveReply = nullptr;
+    if (reply->error() != QNetworkReply::NoError)
+        return;
+
+    const QJsonObject obj = QJsonDocument::fromJson(reply->readAll()).object();
+    QJsonArray samples = obj.value(QStringLiteral("samples")).toArray();
+    if (samples.isEmpty())
+        samples = obj.value(QStringLiteral("peaks")).toArray();
+    if (samples.isEmpty())
+        return;
+
+    QVariantList out;
+    out.reserve(samples.size());
+    for (const QJsonValue &v : samples)
+        out.append(v.toDouble());
+    m_waveformSamples = out;
+    emit waveformChanged();
+}
+
 void PlayerController::updateMetadata()
 {
     const QVariantMap t = m_queue->currentTrack();
@@ -79,6 +142,8 @@ void PlayerController::updateMetadata()
     m_permalinkUrl = t.value(QStringLiteral("permalinkUrl")).toString();
     m_currentUrn = t.value(QStringLiteral("urn")).toString();
     m_reported = false;
+    // waveform peaks fetch — commented out with the feature (not working yet)
+    // loadWaveform(t);
     emit trackChanged();
     emit likedChanged();
 }
@@ -131,8 +196,8 @@ void PlayerController::toggleLike(const QVariantMap &track)
 {
     const bool liked = track.value(QStringLiteral("userFavorite")).toBool();
     const QString urn = track.value(QStringLiteral("urn")).toString();
-    likeTrack(urn, !liked);
-    // optimistic UI update
+    // optimistic UI update only — the network write goes through the
+    // WebWriter hidden-browser bridge (bot protection rejects plain HTTP)
     m_queue->setFavorite(urn, !liked);
     emit likedChanged();
 }
@@ -150,20 +215,16 @@ void PlayerController::toggleCurrentLike()
     toggleLike(t);
 }
 
+QVariantMap PlayerController::currentTrack() const
+{
+    return m_queue ? m_queue->currentTrack() : QVariantMap();
+}
+
 void PlayerController::likeTrack(const QString &urn, bool like)
 {
-    QString id = urn;
-    const int c = id.lastIndexOf(QLatin1Char(':'));
-    if (c >= 0)
-        id = id.mid(c + 1);
-    if (id.isEmpty())
-        return;
-    // api-v2 like endpoints (as used by the SoundCloud web client)
-    if (like)
-        m_api->put(QStringLiteral("/likes/tracks/%1").arg(id), QVariantMap(),
-                   QStringLiteral("silent"));
-    else
-        m_api->del(QStringLiteral("/likes/tracks/%1").arg(id), QStringLiteral("silent"));
+    Q_UNUSED(urn)
+    Q_UNUSED(like)
+    // network writes are performed by the WebWriter bridge from QML
 }
 
 void PlayerController::startRadio(const QVariantMap &track)
@@ -467,6 +528,7 @@ void PlayerController::onApiFailed(const QString &tag, int status, const QString
 {
     if (!tag.startsWith(QLatin1String("player")))
         return;
+
     setBusy(false);
 
     if (tag == QLatin1String("player-media")

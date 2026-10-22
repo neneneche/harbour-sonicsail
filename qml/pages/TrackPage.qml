@@ -22,6 +22,25 @@ Page {
     }
 
     property var relatedModel: null
+    property bool liked: false
+    property bool reposted: false
+    property bool following: false
+
+    function trackId() {
+        if (!trackData)
+            return ""
+        if (trackData.urn) {
+            var u = String(trackData.urn)
+            return u.substring(u.lastIndexOf(":") + 1)
+        }
+        return trackData.id ? String(trackData.id) : ""
+    }
+
+    function userFollowId() {
+        var u = trackData && trackData.user ? trackData.user : {}
+        var id = u.id !== undefined ? u.id : (u.userId !== undefined ? u.userId : 0)
+        return String(id)
+    }
 
     Timer {
         id: relatedTimer
@@ -34,6 +53,7 @@ Page {
 
     Component.onCompleted: {
         relatedModel = api.createTrackModel()
+        liked = !!(trackData && trackData.userFavorite)
         relatedTimer.start()
     }
 
@@ -115,14 +135,20 @@ Page {
                         width: Theme.itemSizeSmall
                         height: width
                         anchors.verticalCenter: parent.verticalCenter
-                        icon.source: (trackData && trackData.userFavorite)
+                        icon.source: trackPage.liked
                                     ? "image://theme/icon-favorite-selected"
                                     : "image://theme/icon-favorite"
                         enabled: auth.loggedIn && !!trackData && !!trackData.urn
                         onClicked: {
+                            trackPage.liked = !trackPage.liked
                             player.toggleLike(trackData)
-                            if (trackData.userFavorite !== undefined)
-                                trackData.userFavorite = !trackData.userFavorite
+                            webWriter.like(trackPage.trackId(), trackPage.liked, function(ok) {
+                                if (!ok) {
+                                    trackPage.liked = !trackPage.liked
+                                    player.toggleLike(trackData)
+                                    settings.notify(qsTr("Could not update like"))
+                                }
+                            })
                         }
                     }
                 }
@@ -150,6 +176,38 @@ Page {
                 text: qsTr("Play")
                 enabled: !!trackData && trackData.playable !== false
                 onClicked: player.startRadio(trackData)
+            }
+
+            Row {
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: Theme.paddingMedium
+
+                Button {
+                    text: trackPage.reposted ? qsTr("Undo repost") : qsTr("Repost")
+                    enabled: auth.loggedIn && !!trackData && !!trackData.urn
+                    onClicked: {
+                        trackPage.reposted = !trackPage.reposted
+                        webWriter.repost(trackPage.trackId(), trackPage.reposted, function(ok) {
+                            if (!ok) {
+                                trackPage.reposted = !trackPage.reposted
+                                settings.notify(qsTr("Could not update repost"))
+                            }
+                        })
+                    }
+                }
+                Button {
+                    text: trackPage.following ? qsTr("Unfollow") : qsTr("Follow")
+                    enabled: auth.loggedIn && trackPage.userFollowId() !== "0"
+                    onClicked: {
+                        trackPage.following = !trackPage.following
+                        webWriter.follow(trackPage.userFollowId(), trackPage.following, function(ok) {
+                            if (!ok) {
+                                trackPage.following = !trackPage.following
+                                settings.notify(qsTr("Could not update follow"))
+                            }
+                        })
+                    }
+                }
             }
 
             SectionHeader {
@@ -181,7 +239,18 @@ Page {
                             MenuItem {
                                 text: model.userFavorite ? qsTr("Remove from likes") : qsTr("Add to likes")
                                 enabled: auth.loggedIn
-                                onClicked: player.toggleLike(relatedModel.get(index))
+                                onClicked: {
+                                    var item = relatedModel.get(index)
+                                    var want = !model.userFavorite
+                                    player.toggleLike(item)
+                                    relatedModel.setFavorite(item.urn, want)
+                                    webWriter.like(String(item.id), want, function(ok) {
+                                        if (!ok) {
+                                            relatedModel.setFavorite(item.urn, !want)
+                                            settings.notify(qsTr("Could not update like"))
+                                        }
+                                    })
+                                }
                             }
                             MenuItem {
                                 text: qsTr("Download")

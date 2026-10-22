@@ -161,6 +161,24 @@ void TrackQueue::removeAt(int idx)
         setCurrentIndex(m_tracks.isEmpty() ? -1 : m_tracks.size() - 1);
 }
 
+void TrackQueue::move(int from, int to)
+{
+    if (from == to || from < 0 || from >= m_tracks.size()
+            || to < 0 || to >= m_tracks.size())
+        return;
+    beginMoveRows(QModelIndex(), from, from, QModelIndex(), to > from ? to + 1 : to);
+    m_tracks.move(from, to);
+    endMoveRows();
+    // keep the current track identity stable
+    if (m_current == from)
+        m_current = to;
+    else if (from < m_current && to >= m_current)
+        --m_current;
+    else if (from > m_current && to <= m_current)
+        ++m_current;
+    emit currentIndexChanged();
+}
+
 void TrackQueue::clear()
 {
     beginResetModel();

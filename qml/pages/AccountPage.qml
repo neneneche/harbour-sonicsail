@@ -79,8 +79,7 @@ Page {
             }
 
             SectionHeader {
-                text: qsTr("Sign in")
-                visible: !auth.loggedIn
+                text: qsTr("Account")
             }
 
             Button {
@@ -90,10 +89,6 @@ Page {
                 onClicked: pageStack.push(Qt.resolvedUrl("LoginPage.qml"))
             }
 
-            SectionHeader {
-                text: qsTr("Session")
-            }
-
             Button {
                 anchors.horizontalCenter: parent.horizontalCenter
                 visible: auth.loggedIn
@@ -101,8 +96,24 @@ Page {
                 onClicked: {
                     auth.logout()
                     settings.notify(qsTr("Signed out"))
+                    // straight back to sign-in so another account can be used
+                    pageStack.push(Qt.resolvedUrl("LoginPage.qml"))
                 }
             }
+
+            SectionHeader {
+                text: qsTr("Experimental")
+            }
+
+            // Waveform seek bar — commented out with the feature (not working yet)
+            /*
+            TextSwitch {
+                text: qsTr("Waveform seek bar")
+                description: qsTr("Show a SoundCloud waveform on the Now playing page (tap to seek). May not work for all tracks.")
+                checked: settings.showWaveform
+                onCheckedChanged: settings.showWaveform = checked
+            }
+            */
 
             Button {
                 anchors.horizontalCenter: parent.horizontalCenter
