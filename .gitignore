@@ -2,7 +2,6 @@ soundcloud_keys.pri
 *.user
 *.pro.user
 build-*/
-RPMS/
 BUILD/
 BUILDROOT/
 SRPMS/
