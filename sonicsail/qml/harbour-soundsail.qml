@@ -28,4 +28,14 @@ ApplicationWindow {
             notice.show()
         }
     }
+
+    Connections {
+        target: auth
+        onSessionExpired: {
+            settings.notify(qsTr("Session expired — sign in again"))
+            // straight to the sign-in page so a new login can be made
+            if (pageStack.depth === 1)
+                pageStack.push(Qt.resolvedUrl("pages/LoginPage.qml"))
+        }
+    }
 }

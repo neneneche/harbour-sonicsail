@@ -22,6 +22,20 @@ Page {
 
         PullDownMenu {
             MenuItem {
+                text: player.liked ? qsTr("Remove from likes") : qsTr("Add to likes")
+                enabled: auth.loggedIn && player.title.length > 0
+                onClicked: {
+                    player.toggleCurrentLike()
+                    webWriter.like(String(player.currentTrack.id || ""), player.liked,
+                                   function(ok) {
+                        if (!ok) {
+                            player.toggleCurrentLike()
+                            settings.notify(qsTr("Could not update like"))
+                        }
+                    })
+                }
+            }
+            MenuItem {
                 text: qsTr("Related tracks")
                 enabled: player.title.length > 0
                 onClicked: pageStack.push(Qt.resolvedUrl("TrackPage.qml"),

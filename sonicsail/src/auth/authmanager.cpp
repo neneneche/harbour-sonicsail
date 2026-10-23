@@ -802,8 +802,9 @@ void AuthManager::onSessionCheckReply()
         return;
     }
 
-    if (status >= 400 && status < 500) {
-        // stored token dead — try one silent re-harvest from the web profile
+    if (status == 401) {
+        // token genuinely dead — try one silent re-harvest from the web profile.
+        // (403 is bot protection, NOT a bad token — never destroy the session on it)
         qInfo() << "AuthManager: stored session rejected (" << status
                 << "), trying web profile re-harvest";
         m_sessionCheckPending = true;
@@ -832,7 +833,7 @@ void AuthManager::onSessionCheckReply()
         return;
     }
 
-    // transient error — keep the session as-is
+    // transient error (network, 5xx, 403 bot-protection) — keep the session
     qWarning() << "AuthManager: session check failed transiently" << status;
 }
 

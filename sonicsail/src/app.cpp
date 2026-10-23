@@ -55,9 +55,7 @@ AppController::AppController(QObject *parent)
         m_settings->notify(name.isEmpty() ? tr("Signed in")
                                           : tr("Signed in as %1").arg(name));
     });
-    connect(m_auth, &AuthManager::sessionExpired, this, [this]() {
-        m_settings->notify(tr("Session expired — sign in again"));
-    });
+    // sessionExpired is handled in QML: toast + open the sign-in page
     if (m_auth->isLoggedIn()) {
         QTimer::singleShot(1200, m_auth, [this]() { m_auth->refreshSession(); });
     }
