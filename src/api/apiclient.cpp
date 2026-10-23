@@ -39,6 +39,7 @@ ApiClient::ApiClient(AuthManager *auth, QObject *parent)
 void ApiClient::setPublicClientId(const QString &id)
 {
     m_publicClientId = id;
+    emit publicClientIdChanged();
     {
         QScopedPointer<QSettings> s(scSettings());
         s->setValue(QStringLiteral("public_client_id"), id);
@@ -52,6 +53,7 @@ void ApiClient::setPublicClientId(const QString &id)
 void ApiClient::invalidatePublicClientId()
 {
     m_publicClientId.clear();
+    emit publicClientIdChanged();
     QScopedPointer<QSettings> s(scSettings());
     s->remove(QStringLiteral("public_client_id"));
 }

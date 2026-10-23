@@ -13,6 +13,7 @@ class Settings : public QObject
     Q_PROPERTY(bool saveToMusic READ saveToMusic WRITE setSaveToMusic NOTIFY saveToMusicChanged)
     Q_PROPERTY(bool autoDownloadPlayed READ autoDownloadPlayed WRITE setAutoDownloadPlayed NOTIFY autoDownloadPlayedChanged)
     Q_PROPERTY(bool showWaveform READ showWaveform WRITE setShowWaveform NOTIFY showWaveformChanged)
+    Q_PROPERTY(bool showComments READ showComments WRITE setShowComments NOTIFY showCommentsChanged)
 public:
     explicit Settings(QObject *parent = nullptr);
 
@@ -33,6 +34,12 @@ public:
     void setAutoDownloadPlayed(bool on);
     bool showWaveform() const;
     void setShowWaveform(bool on);
+    bool showComments() const;
+    void setShowComments(bool on);
+
+    // numeric SoundCloud user id (needed for like/unlike writes)
+    QString userId() const;
+    void setUserId(const QString &id);
 
     Q_INVOKABLE void setRuntimeCredentials(const QString &clientId, const QString &clientSecret);
     Q_INVOKABLE void clearCredentials();
@@ -49,6 +56,7 @@ signals:
     void saveToMusicChanged();
     void autoDownloadPlayedChanged();
     void showWaveformChanged();
+    void showCommentsChanged();
     void loginCodeProvided(const QString &code);
     void notifyRequested(const QString &message);
 

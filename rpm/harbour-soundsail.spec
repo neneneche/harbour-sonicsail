@@ -9,8 +9,8 @@ Name:       harbour-soundsail
 # << macros
 
 Summary:    SoundCloud client for Sailfish OS
-Version:    0.3.1
-Release:    2
+Version:    0.4.0
+Release:    9
 Group:      Applications/Multimedia
 License:    BSD-3-Clause
 URL:        https://github.com/harbour-soundsail/harbour-soundsail

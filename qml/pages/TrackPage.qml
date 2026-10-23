@@ -22,9 +22,56 @@ Page {
     }
 
     property var relatedModel: null
+    property var commentsModel: []
+    property string commentsTag: ""
+    property bool commentsExpanded: false
     property bool liked: false
     property bool reposted: false
     property bool following: false
+    property string pendingFollow: ""
+
+    function detail(msg, info) {
+        var d = String(info === undefined || info === null ? "" : info).substring(0, 60)
+        return d.length > 0 ? msg + " (" + d + ")" : msg
+    }
+
+    function fmtCommentDate(iso) {
+        if (!iso)
+            return ""
+        return String(iso).replace("T", " ").substring(0, 16)
+    }
+
+    function loadComments() {
+        commentsModel = []
+        commentsExpanded = false
+        if (!settings.showComments)
+            return
+        var id = trackId()
+        if (!id)
+            return
+        commentsTag = "comments-" + id
+        api.get("/tracks/" + id + "/comments",
+                { limit: 20, linked_partitioning: 1, threaded: 1 },
+                commentsTag)
+    }
+
+    function postComment() {
+        var id = trackId()
+        if (!id || commentField.text.length === 0)
+            return
+        webWriter.comment(id, commentField.text, function(ok, info) {
+            if (ok) {
+                settings.notify(qsTr("Comment posted"))
+                trackPage.loadComments()
+            } else {
+                var detail = String(info === undefined || info === null ? "" : info).substring(0, 80)
+                settings.notify(detail.length > 0
+                                ? qsTr("Could not post comment (%1)").arg(detail)
+                                : qsTr("Could not post comment"))
+            }
+        })
+        commentField.text = ""
+    }
 
     function trackId() {
         if (!trackData)
@@ -37,9 +84,20 @@ Page {
     }
 
     function userFollowId() {
+        // flat key first (same shape on every path), then nested/urn fallbacks
+        var id = String(trackData ? (trackData.userId !== undefined ? trackData.userId : "") : "")
         var u = trackData && trackData.user ? trackData.user : {}
-        var id = u.id !== undefined ? u.id : (u.userId !== undefined ? u.userId : 0)
-        return String(id)
+        if (!id || id === "0" || id === "undefined") {
+            if (u && u.id !== undefined)
+                id = String(u.id)
+        }
+        if (!id || id === "0" || id === "undefined") {
+            var urn = String(u && u.urn ? u.urn : "")
+            var c = urn.lastIndexOf(":")
+            if (c >= 0)
+                id = urn.substring(c + 1)
+        }
+        return id && id !== "undefined" ? id : "0"
     }
 
     Timer {
@@ -55,6 +113,39 @@ Page {
         relatedModel = api.createTrackModel()
         liked = !!(trackData && trackData.userFavorite)
         relatedTimer.start()
+        loadComments()
+    }
+
+    Connections {
+        target: api
+        onListReceived: {
+            if (tag === trackPage.commentsTag)
+                commentsModel = items
+        }
+        onSuccess: {
+            if (tag !== "follow-resolve")
+                return
+            // `data` is a normalized track map (same shape as list items)
+            if (data && data.title !== undefined)
+                trackData = data
+            var fid = String(data && data.userId !== undefined ? data.userId : "0")
+            if (fid === "0" && data && data.user && data.user.id)
+                fid = String(data.user.id)
+            if (!fid || fid === "0") {
+                trackPage.pendingFollow = ""
+                settings.notify(qsTr("Could not update follow (no user id)"))
+                return
+            }
+            var want = trackPage.pendingFollow === "follow"
+            trackPage.pendingFollow = ""
+            trackPage.following = want
+            webWriter.follow(fid, want, function(ok, info) {
+                if (!ok) {
+                    trackPage.following = !want
+                    settings.notify(detail(qsTr("Could not update follow"), info))
+                }
+            })
+        }
     }
 
     SilicaFlickable {
@@ -142,11 +233,11 @@ Page {
                         onClicked: {
                             trackPage.liked = !trackPage.liked
                             player.toggleLike(trackData)
-                            webWriter.like(trackPage.trackId(), trackPage.liked, function(ok) {
+                            webWriter.like(trackPage.trackId(), trackPage.liked, function(ok, info) {
                                 if (!ok) {
                                     trackPage.liked = !trackPage.liked
                                     player.toggleLike(trackData)
-                                    settings.notify(qsTr("Could not update like"))
+                                    settings.notify(detail(qsTr("Could not update like"), info))
                                 }
                             })
                         }
@@ -197,15 +288,125 @@ Page {
                 }
                 Button {
                     text: trackPage.following ? qsTr("Unfollow") : qsTr("Follow")
-                    enabled: auth.loggedIn && trackPage.userFollowId() !== "0"
+                    enabled: auth.loggedIn && !!trackData
                     onClicked: {
+                        var fid = trackPage.userFollowId()
+                        if (!fid || fid === "0") {
+                            // resolve the track through the same normalizer the
+                            // list maps use (api client returns trackMap output)
+                            pendingFollow = trackPage.following ? "unfollow" : "follow"
+                            api.get("/tracks/" + trackId(), {}, "follow-resolve")
+                            return
+                        }
                         trackPage.following = !trackPage.following
-                        webWriter.follow(trackPage.userFollowId(), trackPage.following, function(ok) {
+                        webWriter.follow(fid, trackPage.following, function(ok, info) {
                             if (!ok) {
                                 trackPage.following = !trackPage.following
-                                settings.notify(qsTr("Could not update follow"))
+                                settings.notify(detail(qsTr("Could not update follow"), info))
                             }
                         })
+                    }
+                }
+            }
+
+            // Comments: one preview comment; tapping it reveals the rest
+            // plus the write field (pure Silica — just visibility toggling)
+            SectionHeader {
+                visible: settings.showComments && commentsModel.length > 0
+                text: qsTr("Comments")
+            }
+
+            ListItem {
+                id: firstComment
+                visible: settings.showComments && commentsModel.length > 0
+                contentHeight: firstCommentCol.height + Theme.paddingMedium
+                onClicked: commentsExpanded = !commentsExpanded
+
+                Column {
+                    id: firstCommentCol
+                    x: Theme.horizontalPageMargin
+                    width: parent.width - Theme.horizontalPageMargin * 2
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Theme.paddingSmall
+
+                    Label {
+                        width: parent.width
+                        text: (commentsModel[0].username || "") + "  ·  "
+                              + trackPage.fmtCommentDate(commentsModel[0].createdAt)
+                        color: Theme.highlightColor
+                        font.pixelSize: Theme.fontSizeExtraSmall
+                        truncationMode: TruncationMode.Fade
+                    }
+                    Label {
+                        width: parent.width
+                        text: commentsModel[0].body || ""
+                        color: Theme.primaryColor
+                        font.pixelSize: Theme.fontSizeSmall
+                        wrapMode: Text.WordWrap
+                        maximumLineCount: commentsExpanded ? 100 : 2
+                        truncationMode: TruncationMode.Fade
+                    }
+                    Label {
+                        width: parent.width
+                        text: commentsExpanded
+                              ? qsTr("Show less")
+                              : (commentsModel.length > 1
+                                 ? qsTr("Tap to show %1 comments").arg(commentsModel.length)
+                                 : qsTr("Tap to write a comment"))
+                        color: Theme.secondaryHighlightColor
+                        font.pixelSize: Theme.fontSizeExtraSmall
+                    }
+                }
+            }
+
+            Column {
+                width: parent.width
+                visible: settings.showComments && commentsExpanded
+
+                Repeater {
+                    model: commentsModel
+                    delegate: ListItem {
+                        visible: index > 0
+                        contentHeight: commentCol.height + Theme.paddingMedium
+
+                        Column {
+                            id: commentCol
+                            x: Theme.horizontalPageMargin
+                            width: parent.width - Theme.horizontalPageMargin * 2
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: Theme.paddingSmall
+
+                            Label {
+                                width: parent.width
+                                text: (modelData.username || "") + "  ·  "
+                                      + trackPage.fmtCommentDate(modelData.createdAt)
+                                color: Theme.highlightColor
+                                font.pixelSize: Theme.fontSizeExtraSmall
+                                truncationMode: TruncationMode.Fade
+                            }
+                            Label {
+                                width: parent.width
+                                text: modelData.body || ""
+                                color: Theme.primaryColor
+                                font.pixelSize: Theme.fontSizeSmall
+                                wrapMode: Text.WordWrap
+                            }
+                        }
+                    }
+                }
+
+                TextField {
+                    id: commentField
+                    x: Theme.horizontalPageMargin
+                    width: parent.width - Theme.horizontalPageMargin * 2
+                    visible: auth.loggedIn
+                    label: qsTr("Add a comment")
+                    placeholderText: qsTr("Write a comment…")
+                    EnterKey.enabled: text.length > 0
+                    EnterKey.iconSource: "image://theme/icon-m-enter-accept"
+                    EnterKey.onClicked: {
+                        postComment()
+                        focus = false
                     }
                 }
             }

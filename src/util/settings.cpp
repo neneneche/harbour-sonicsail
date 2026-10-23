@@ -149,6 +149,27 @@ void Settings::setShowWaveform(bool on)
     emit showWaveformChanged();
 }
 
+bool Settings::showComments() const
+{
+    return confValue(QStringLiteral("showComments")) != QLatin1String("false");
+}
+
+void Settings::setShowComments(bool on)
+{
+    setConfValue(QStringLiteral("showComments"), on ? QStringLiteral("true") : QStringLiteral("false"));
+    emit showCommentsChanged();
+}
+
+QString Settings::userId() const
+{
+    return confValue(QStringLiteral("userId"));
+}
+
+void Settings::setUserId(const QString &id)
+{
+    setConfValue(QStringLiteral("userId"), id);
+}
+
 void Settings::completeLoginWithCode(const QString &code)
 {
     emit loginCodeProvided(code);

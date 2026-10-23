@@ -54,6 +54,11 @@
 - Like/unlike: `PUT/DELETE /users/{userId}/track_likes/{trackId}`;
   repost: `PUT/DELETE /me/track_reposts/{id}`;
   follow: `POST/DELETE /me/followings/{id}`.
+- Comments: `POST /tracks/{id}/comments` takes **flat query params**
+  (`body`, `timestamp`, `app_version` + `client_id`), **no request body** —
+  a JSON body yields "missing/multiple params" errors. `app_version` is the
+  web app's `appVersion` (scrape from soundcloud.com; fallback `1790934937`).
+  `GET` comments requires `threaded=1`.
 - Old discover/chart permalinks (`discover/sets/charts-*`) return 404.
 
 

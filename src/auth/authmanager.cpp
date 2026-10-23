@@ -66,6 +66,8 @@ AuthManager::AuthManager(Settings *settings, QObject *parent)
             QTimer::singleShot(0, this, [this]() { emit tokenReady(m_accessToken); });
         }
     }
+    // persist across restarts so like/unlike keeps working before the next /me
+    m_userId = m_settings->userId();
 }
 
 bool AuthManager::hasCredentials() const
@@ -712,6 +714,7 @@ void AuthManager::onTokenVerifyReply()
         const QJsonObject me = QJsonDocument::fromJson(body).object();
         m_userName = me.value(QStringLiteral("username")).toString();
         m_userId = QString::number(qint64(me.value(QStringLiteral("id")).toDouble()));
+        m_settings->setUserId(m_userId);
         // commit state before navigation reacts to loginSucceeded
         emit authStateChanged();
         emit loginSucceeded();
@@ -726,6 +729,7 @@ void AuthManager::onTokenVerifyReply()
     m_accessToken.clear();
     m_userName.clear();
     m_userId.clear();
+    m_settings->setUserId(QString());
     m_store->clear(QStringLiteral("user"));
     emit authStateChanged();
     emit loginFailed(tr("Token rejected (%1) — copy oauth_token from soundcloud.com cookies").arg(status));
@@ -748,6 +752,7 @@ void AuthManager::logout()
     m_expiresAt = 0;
     m_userName.clear();
     m_userId.clear();
+    m_settings->setUserId(QString());
     m_lastRejectedHarvest.clear();
     m_sessionCheckPending = false;
     m_store->clear(QStringLiteral("user"));
@@ -796,6 +801,7 @@ void AuthManager::onSessionCheckReply()
         const QJsonObject me = QJsonDocument::fromJson(body).object();
         m_userName = me.value(QStringLiteral("username")).toString();
         m_userId = QString::number(qint64(me.value(QStringLiteral("id")).toDouble()));
+        m_settings->setUserId(m_userId);
         qInfo() << "AuthManager: session refreshed for" << m_userName;
         emit sessionRefreshed(m_userName);
         emit authStateChanged();
@@ -814,6 +820,7 @@ void AuthManager::onSessionCheckReply()
         m_accessToken.clear();
         m_userName.clear();
         m_userId.clear();
+    m_settings->setUserId(QString());
         m_store->clear(QStringLiteral("user"));
         emit authStateChanged();
         importOwnWebProfileCookies();

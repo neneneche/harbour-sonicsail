@@ -79,6 +79,8 @@ struct ScTrack {
         m.insert(QStringLiteral("streamable"), streamable);
         m.insert(QStringLiteral("user"), user.toVariantMap());
         m.insert(QStringLiteral("username"), user.username);
+        // flat uploader id — QML can't always dig into nested maps
+        m.insert(QStringLiteral("userId"), user.id);
         m.insert(QStringLiteral("playable"), access != QLatin1String("blocked"));
         m.insert(QStringLiteral("kind"), QStringLiteral("track"));
         return m;
@@ -119,6 +121,8 @@ struct ScPlaylist {
         m.insert(QStringLiteral("durationMs"), durationMs);
         m.insert(QStringLiteral("user"), user.toVariantMap());
         m.insert(QStringLiteral("username"), user.username);
+        // flat uploader id — QML can't always dig into nested maps
+        m.insert(QStringLiteral("userId"), user.id);
         m.insert(QStringLiteral("kind"),
                  kind.isEmpty() ? QStringLiteral("playlist") : kind);
         QVariantList tl;

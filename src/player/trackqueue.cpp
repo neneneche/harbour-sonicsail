@@ -72,29 +72,44 @@ QVariantMap TrackQueue::currentTrack() const
     return m_tracks.at(m_current).toVariantMap();
 }
 
+static ScTrack trackFromMap(const QVariantMap &m)
+{
+    ScTrack t;
+    t.id = m.value(QStringLiteral("id")).toLongLong();
+    t.urn = m.value(QStringLiteral("urn")).toString();
+    t.title = m.value(QStringLiteral("title")).toString();
+    t.description = m.value(QStringLiteral("description")).toString();
+    t.artworkUrl = m.value(QStringLiteral("artworkUrl")).toString();
+    t.permalinkUrl = m.value(QStringLiteral("permalinkUrl")).toString();
+    t.streamUrl = m.value(QStringLiteral("streamUrl")).toString();
+    t.waveformUrl = m.value(QStringLiteral("waveformUrl")).toString();
+    t.access = m.value(QStringLiteral("access")).toString();
+    if (t.access.isEmpty())
+        t.access = QStringLiteral("playable");
+    t.durationMs = m.value(QStringLiteral("durationMs")).toLongLong();
+    t.playbackCount = m.value(QStringLiteral("playbackCount")).toLongLong();
+    t.likesCount = m.value(QStringLiteral("likesCount")).toLongLong();
+    t.commentCount = m.value(QStringLiteral("commentCount")).toLongLong();
+    t.userFavorite = m.value(QStringLiteral("userFavorite")).toBool();
+    t.streamable = !m.contains(QStringLiteral("streamable"))
+            || m.value(QStringLiteral("streamable")).toBool();
+    const QVariantMap u = m.value(QStringLiteral("user")).toMap();
+    t.user.id = u.value(QStringLiteral("id")).toLongLong();
+    t.user.urn = u.value(QStringLiteral("urn")).toString();
+    t.user.username = m.value(QStringLiteral("username")).toString();
+    if (t.user.username.isEmpty())
+        t.user.username = u.value(QStringLiteral("username")).toString();
+    t.user.avatarUrl = u.value(QStringLiteral("avatarUrl")).toString();
+    t.user.permalinkUrl = u.value(QStringLiteral("permalinkUrl")).toString();
+    return t;
+}
+
 void TrackQueue::setFromList(const QVariantList &tracks, int startIndex)
 {
     beginResetModel();
     m_tracks.clear();
-    for (const QVariant &v : tracks) {
-        const QVariantMap m = v.toMap();
-        ScTrack t;
-        t.id = m.value(QStringLiteral("id")).toLongLong();
-        t.urn = m.value(QStringLiteral("urn")).toString();
-        t.title = m.value(QStringLiteral("title")).toString();
-        t.artworkUrl = m.value(QStringLiteral("artworkUrl")).toString();
-        t.permalinkUrl = m.value(QStringLiteral("permalinkUrl")).toString();
-        t.streamUrl = m.value(QStringLiteral("streamUrl")).toString();
-        t.access = m.value(QStringLiteral("access")).toString();
-        if (t.access.isEmpty())
-            t.access = QStringLiteral("playable");
-        t.durationMs = m.value(QStringLiteral("durationMs")).toLongLong();
-        t.userFavorite = m.value(QStringLiteral("userFavorite")).toBool();
-        t.user.username = m.value(QStringLiteral("username")).toString();
-        if (t.user.username.isEmpty())
-            t.user.username = m.value(QStringLiteral("user")).toMap().value(QStringLiteral("username")).toString();
-        m_tracks.append(t);
-    }
+    for (const QVariant &v : tracks)
+        m_tracks.append(trackFromMap(v.toMap()));
     endResetModel();
     emit countChanged();
     setCurrentIndex(qBound(0, startIndex, m_tracks.isEmpty() ? -1 : m_tracks.size() - 1));
@@ -105,26 +120,8 @@ void TrackQueue::setFromList(const QVariantList &tracks, int startIndex)
 void TrackQueue::append(const QVariantMap &track)
 {
     beginInsertRows(QModelIndex(), m_tracks.size(), m_tracks.size());
-    QVariantList list{track};
-    const int prev = m_tracks.size();
-    // reuse setFromList parse via temporary
-    const QVariantMap m = track;
-    ScTrack t;
-    t.id = m.value(QStringLiteral("id")).toLongLong();
-    t.urn = m.value(QStringLiteral("urn")).toString();
-    t.title = m.value(QStringLiteral("title")).toString();
-    t.artworkUrl = m.value(QStringLiteral("artworkUrl")).toString();
-    t.permalinkUrl = m.value(QStringLiteral("permalinkUrl")).toString();
-    t.access = m.value(QStringLiteral("access")).toString();
-    if (t.access.isEmpty())
-        t.access = QStringLiteral("playable");
-    t.durationMs = m.value(QStringLiteral("durationMs")).toLongLong();
-    t.userFavorite = m.value(QStringLiteral("userFavorite")).toBool();
-    t.user.username = m.value(QStringLiteral("username")).toString();
-    m_tracks.append(t);
+    m_tracks.append(trackFromMap(track));
     endInsertRows();
-    Q_UNUSED(prev)
-    Q_UNUSED(list)
     emit countChanged();
 }
 

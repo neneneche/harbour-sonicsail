@@ -6,6 +6,15 @@ Page {
     id: playerPage
     objectName: "PlayerPage"
 
+    function currentTrackId() {
+        var t = player.currentTrack || {}
+        if (t.urn) {
+            var u = String(t.urn)
+            return u.substring(u.lastIndexOf(":") + 1)
+        }
+        return String(t.id || "")
+    }
+
     function fmtMs(ms) {
         ms = Number(ms) || 0
         var s = Math.floor(ms / 1000)
@@ -25,12 +34,16 @@ Page {
                 text: player.liked ? qsTr("Remove from likes") : qsTr("Add to likes")
                 enabled: auth.loggedIn && player.title.length > 0
                 onClicked: {
+                    // capture the wanted state BEFORE the optimistic toggle
+                    var want = !player.liked
                     player.toggleCurrentLike()
-                    webWriter.like(String(player.currentTrack.id || ""), player.liked,
-                                   function(ok) {
+                    webWriter.like(currentTrackId(), want, function(ok, info) {
                         if (!ok) {
                             player.toggleCurrentLike()
-                            settings.notify(qsTr("Could not update like"))
+                            var d = String(info === undefined || info === null ? "" : info).substring(0, 60)
+                            settings.notify(d.length > 0
+                                            ? qsTr("Could not update like (%1)").arg(d)
+                                            : qsTr("Could not update like"))
                         }
                     })
                 }
@@ -121,12 +134,15 @@ Page {
                                     : "image://theme/icon-favorite"
                         enabled: auth.loggedIn && player.title.length > 0
                         onClicked: {
+                            var want = !player.liked
                             player.toggleCurrentLike()
-                            webWriter.like(String(player.currentTrack.id || ""), player.liked,
-                                           function(ok) {
+                            webWriter.like(currentTrackId(), want, function(ok, info) {
                                 if (!ok) {
                                     player.toggleCurrentLike()
-                                    settings.notify(qsTr("Could not update like"))
+                                    var d = String(info === undefined || info === null ? "" : info).substring(0, 60)
+                                    settings.notify(d.length > 0
+                                                    ? qsTr("Could not update like (%1)").arg(d)
+                                                    : qsTr("Could not update like"))
                                 }
                             })
                         }

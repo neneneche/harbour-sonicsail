@@ -12,6 +12,7 @@ class AuthManager;
 class ApiClient : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(QString publicClientId READ publicClientId NOTIFY publicClientIdChanged)
 public:
     explicit ApiClient(AuthManager *auth, QObject *parent = nullptr);
 
@@ -36,6 +37,7 @@ public:
     void deleteSilent(const QString &path);
 
 signals:
+    void publicClientIdChanged();
     void success(const QString &tag, const QVariantMap &data);
     void failed(const QString &tag, int status, const QString &message);
     void listReceived(const QString &tag, const QVariantList &items, const QString &nextHref);

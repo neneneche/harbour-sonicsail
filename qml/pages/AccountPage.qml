@@ -79,6 +79,17 @@ Page {
             }
 
             SectionHeader {
+                text: qsTr("Comments")
+            }
+
+            TextSwitch {
+                text: qsTr("Show comments on track pages")
+                description: qsTr("Show one comment on the track page; tap it to read more or write your own.")
+                checked: settings.showComments
+                onCheckedChanged: settings.showComments = checked
+            }
+
+            SectionHeader {
                 text: qsTr("Account")
             }
 
